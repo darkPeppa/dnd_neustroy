@@ -1,0 +1,20 @@
+CREATE TABLE site_config (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE characters (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);
+CREATE TABLE campaigns (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, name TEXT NOT NULL, invite TEXT NOT NULL UNIQUE);
+CREATE TABLE members (campaign_id TEXT NOT NULL REFERENCES campaigns(id), user_id TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(campaign_id,user_id));
+CREATE TABLE sessions (id TEXT PRIMARY KEY, campaign_id TEXT REFERENCES campaigns(id), owner_id TEXT NOT NULL, title TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'proposed', public INTEGER NOT NULL DEFAULT 0, capacity INTEGER NOT NULL DEFAULT 6, description TEXT NOT NULL DEFAULT '');
+CREATE TABLE votes (session_id TEXT NOT NULL REFERENCES sessions(id), user_id TEXT NOT NULL, name TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY(session_id,user_id));
+CREATE TABLE attendees (session_id TEXT NOT NULL REFERENCES sessions(id), user_id TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(session_id,user_id));
+CREATE TABLE clues (id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), title TEXT NOT NULL, body TEXT NOT NULL, kind TEXT NOT NULL, revealed INTEGER NOT NULL DEFAULT 0, recipients TEXT NOT NULL DEFAULT '[]', file_key TEXT, file_name TEXT, mime TEXT);
+CREATE TABLE bookings (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, gm_id TEXT NOT NULL, data TEXT NOT NULL, total INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL);
+CREATE TABLE reservations (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL);
+CREATE TRIGGER no_overlap BEFORE INSERT ON reservations BEGIN
+ SELECT RAISE(ABORT,'TIME_CONFLICT') WHERE EXISTS (SELECT 1 FROM reservations WHERE owner_id=NEW.owner_id AND start<NEW.end AND end>NEW.start);
+END;
+CREATE TABLE outbox (id TEXT PRIMARY KEY, event TEXT NOT NULL, data TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at TEXT NOT NULL);
+CREATE TABLE native_tokens (hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, expires TEXT NOT NULL);
+CREATE TABLE push_tokens (user_id TEXT NOT NULL, token TEXT NOT NULL, platform TEXT NOT NULL, PRIMARY KEY(user_id,token));
+CREATE INDEX character_owner ON characters(user_id);
+CREATE INDEX session_campaign ON sessions(campaign_id);
+CREATE INDEX clue_campaign ON clues(campaign_id);
+CREATE INDEX bookings_owner ON bookings(user_id);

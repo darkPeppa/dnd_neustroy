@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env*
+!.env.example
+.DS_Store
+android/.gradle/
+android/local.properties
+ios/App/Pods/
+*.tar.gz
+
+.local/
+
+data/catalog/*.json
+public/rules/*.json
