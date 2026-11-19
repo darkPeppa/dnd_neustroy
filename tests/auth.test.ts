@@ -11,6 +11,8 @@ test('самостоятельные аккаунты: пароль, cookie, п�
  assert.equal((await call('/api/me',undefined,a.cookie)).body.isAdmin,false);
  assert.equal((await call('/api/auth/claim-owner',{setupKey:'test-owner-key-long-enough-for-setup'},a.cookie)).status,200);
  assert.equal((await call('/api/me',undefined,a.cookie)).body.isAdmin,true);
+ const reused=await mf.dispatchFetch('https://example.test/api/auth/claim-owner',{method:'POST',headers:{'oai-authenticated-user-id':'chatgpt:owner','Content-Type':'application/json'},body:JSON.stringify({setupKey:'test-owner-key-long-enough-for-setup'})});assert.equal(reused.status,409); // Platform sign-in is accepted; the consumed owner key cannot be reused.
+
  const b=await call('/api/auth/register',{email:'player@example.com',password:'other-password-12345',name:'Игрок'});assert.equal(b.status,200);assert.equal((await call('/api/me',undefined,b.cookie)).body.isAdmin,false);
  assert.equal((await call('/api/auth/claim-owner',{setupKey:'test-owner-key-long-enough-for-setup'},b.cookie)).status,409);
  const character=await call('/mcp',{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'character_create',arguments:{name:'Личный герой',classId:'bard',edition:'srd-2024'}}},a.cookie);assert(!character.body.result.isError);
