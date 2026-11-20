@@ -14,3 +14,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Start from Node 20 and check persisted sheets
+        run: npx --yes --package=node@20.16.0 node tests/local-runtime-smoke.mjs

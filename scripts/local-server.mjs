@@ -5,7 +5,7 @@ import path from 'node:path';
 import {networkInterfaces} from 'node:os';
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import worker from '../dist/local-api.mjs';
-const lan=process.argv.includes('--lan'),port=Number(process.env.NEUSTROY_PORT||8787),root=path.resolve('.local');
+const lan=process.argv.includes('--lan'),port=Number(process.env.NEUSTROY_PORT||8787),root=path.resolve(process.env.NEUSTROY_DATA_DIR||'.local');
 await mkdir(path.join(root,'files'),{recursive:true});
 let secret;try{secret=await readFile(path.join(root,'session.key'));}catch{secret=randomBytes(32);await writeFile(path.join(root,'session.key'),secret,{mode:0o600});}
 const sqlite=new DatabaseSync(path.join(root,'neustroy.sqlite'));sqlite.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS local_migrations(name TEXT PRIMARY KEY)');
@@ -38,4 +38,4 @@ const server=http.createServer((req,res)=>{const serve=async()=>{try{
  }
  let file=path.resolve('dist/client','.'+decodeURIComponent(url.pathname));if(!file.startsWith(path.resolve('dist/client')+path.sep)){file=path.resolve('dist/client/index.html');}let data;try{data=await readFile(file);}catch{if(path.extname(url.pathname)){res.writeHead(404).end();return;}file=path.resolve('dist/client/index.html');data=await readFile(file);}res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Cache-Control':'no-cache'});res.end(data);
  }catch(error){console.error(error.message);res.writeHead(500,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Ошибка локального сервера'}));}};queue=queue.then(serve,serve);});
-server.listen(port,lan?'0.0.0.0':'127.0.0.1',()=>{console.log(`neustroy · http://127.0.0.1:${port}`);if(lan)for(const a of addresses)console.log(`Для вашей сети: http://${a}:${port}`);console.log('Без аккаунтов. База и файлы: .local/. Не пробрасывайте этот порт в интернет.');});
+server.listen(port,lan?'0.0.0.0':'127.0.0.1',()=>{const boundPort=server.address().port;console.log(`neustroy · http://127.0.0.1:${boundPort}`);if(lan)for(const a of addresses)console.log(`Для вашей сети: http://${a}:${boundPort}`);console.log('Без аккаунтов. База и файлы: '+root+'. Не пробрасывайте этот порт в интернет.');});

@@ -4,17 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build && wrangler dev --port 8787",
-    "dev:ui": "vite --host 127.0.0.1",
-    "build": "node scripts/prepare-data.mjs && tsc --noEmit && vite build && node scripts/build-server.mjs && node scripts/build-local.mjs",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "db:migrate": "wrangler d1 migrations apply DB --local",
-    "mobile:sync": "npm run build && cap sync",
-    "mobile:android": "cap open android",
-    "mobile:ios": "cap open ios",
+    "dev": "npm run build && node scripts/node-runtime.mjs node_modules/wrangler/bin/wrangler.js dev --port 8787",
+    "dev:ui": "node scripts/node-runtime.mjs node_modules/vite/bin/vite.js --host 127.0.0.1",
+    "build": "node scripts/node-runtime.mjs --run build:app",
+    "test": "node scripts/node-runtime.mjs --import tsx --test tests/*.test.ts",
+    "db:migrate": "node scripts/node-runtime.mjs node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --local",
+    "mobile:sync": "npm run build && node scripts/node-runtime.mjs node_modules/@capacitor/cli/bin/capacitor sync",
+    "mobile:android": "node scripts/node-runtime.mjs node_modules/@capacitor/cli/bin/capacitor open android",
+    "mobile:ios": "node scripts/node-runtime.mjs node_modules/@capacitor/cli/bin/capacitor open ios",
     "install:ci": "npm install",
-    "local": "node scripts/local-server.mjs",
-    "lan": "node scripts/local-server.mjs --lan"
+    "local": "node scripts/node-runtime.mjs scripts/local-server.mjs",
+    "lan": "node scripts/node-runtime.mjs scripts/local-server.mjs --lan",
+    "build:app": "node scripts/prepare-data.mjs && tsc --noEmit && vite build && node scripts/build-server.mjs && node scripts/build-local.mjs",
+    "test:local": "node tests/local-runtime-smoke.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
@@ -44,6 +46,6 @@
     "@types/sql.js": "^1.4.9"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24"
   }
 }
