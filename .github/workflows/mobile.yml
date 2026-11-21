@@ -102,6 +102,10 @@ jobs:
       - name: Build desktop package
         shell: bash
         run: mobile/build-desktop.sh :desktopApp:packageDistributionForCurrentOS
+      - name: Show packaging errors
+        if: failure()
+        shell: bash
+        run: find mobile/desktopApp/build/compose/logs -type f -name '*err.txt' -exec cat {} \;
       - uses: actions/upload-artifact@v4
         with:
           name: neustroy-desktop-${{ matrix.os }}
