@@ -1,0 +1,105 @@
+name: Native apps
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.local/gradle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Preserve development signature between test builds
+        uses: actions/cache@v4
+        with:
+          path: .local/android-debug.keystore
+          key: neustroy-android-development-signature-v1
+      - name: Test, lint and build APK
+        run: mobile/build-android.sh
+      - name: APK checksum
+        run: sha256sum dist/mobile/neustroy-android.apk > dist/mobile/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-android-apk
+          path: |
+            dist/mobile/neustroy-android.apk
+            dist/mobile/SHA256SUMS.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-test-and-lint-reports
+          path: |
+            mobile/shared/build/reports/
+            mobile/shared/build/test-results/
+            mobile/androidApp/build/reports/
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.local/gradle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Xcode project generator
+        run: brew install xcodegen
+      - name: Build for iPhone without signing
+        run: mobile/build-ios.sh
+      - name: Package unsigned archive
+        run: ditto -c -k --sequesterRsrc --keepParent dist/mobile/neustroy-unsigned.xcarchive dist/mobile/neustroy-ios-unsigned.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-ios-unsigned
+          path: dist/mobile/neustroy-ios-unsigned.zip
+          if-no-files-found: error
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      GRADLE_USER_HOME: ${{ github.workspace }}/.local/gradle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build desktop package
+        shell: bash
+        run: mobile/build-desktop.sh :desktopApp:packageDistributionForCurrentOS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-desktop-${{ matrix.os }}
+          path: mobile/desktopApp/build/compose/binaries/main/
+          if-no-files-found: error

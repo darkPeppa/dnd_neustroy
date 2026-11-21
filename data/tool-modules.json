@@ -1,0 +1,303 @@
+[
+  {
+    "id": "npc",
+    "name": "Персонажи мастера",
+    "gm": true,
+    "fields": [
+      ["appearance", "Внешность", "text"],
+      ["motivation", "Мотивация", "text"],
+      ["voice", "Манера речи", "text"],
+      ["connections", "Связи", "text"]
+    ]
+  },
+  {
+    "id": "quest",
+    "name": "Квесты и обещания",
+    "gm": true,
+    "fields": [
+      ["description", "Задача", "text"],
+      [
+        "status",
+        "Статус",
+        "select",
+        "open:Открыт,active:В работе,done:Завершён,failed:Провален"
+      ],
+      ["npc", "Кто дал задание", "text"],
+      ["due", "Напомнить в дату", "date"],
+      ["reward", "Награда", "text"]
+    ]
+  },
+  {
+    "id": "inventory",
+    "name": "Склад, вес и ресурсы",
+    "fields": [
+      ["strength", "Сила владельца", "number"],
+      ["capacity", "Своя грузоподъёмность · 0 = по правилам", "number"],
+      ["coins", "Монеты", "number"]
+    ],
+    "rows": [
+      [
+        "items",
+        "Предметы",
+        [
+          ["name", "Название", "text"],
+          ["qty", "Количество", "number"],
+          ["weight", "Вес единицы, фунты", "number"],
+          ["value", "Цена единицы", "number"],
+          ["charges", "Осталось зарядов", "number"],
+          ["maxCharges", "Максимум зарядов", "number"],
+          [
+            "rest",
+            "Восстановление",
+            "select",
+            "none:Вручную,short:Короткий отдых,long:Долгий отдых"
+          ]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "expenses",
+    "name": "Общие расходы",
+    "fields": [["members", "Участников при разделе", "number"]],
+    "rows": [
+      [
+        "receipts",
+        "Расходы",
+        [
+          ["name", "За что", "text"],
+          ["payer", "Кто оплатил", "text"],
+          ["amount", "Сумма", "number"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "loot",
+    "name": "Добыча партии",
+    "fields": [
+      ["coins", "Общие монеты", "number"],
+      ["members", "Долей", "number"]
+    ],
+    "rows": [
+      [
+        "items",
+        "Добыча",
+        [
+          ["name", "Предмет", "text"],
+          ["qty", "Количество", "number"],
+          ["value", "Стоимость единицы", "number"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "encounter",
+    "name": "Столкновения",
+    "gm": true,
+    "fields": [
+      ["level", "Уровень группы", "number"],
+      ["players", "Игроков", "number"],
+      ["budget", "Свой бюджет XP · 0 = базовый расчёт 2014", "number"]
+    ],
+    "rows": [
+      [
+        "monsters",
+        "Противники",
+        [
+          ["name", "Существо", "text"],
+          ["count", "Количество", "number"],
+          ["xp", "XP за существо", "number"],
+          ["cr", "Показатель опасности", "text"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "combat",
+    "name": "Бой и инициатива",
+    "gm": true,
+    "fields": [
+      ["round", "Раунд", "number"],
+      ["turn", "Индекс текущего хода, от 0", "number"]
+    ],
+    "rows": [
+      [
+        "participants",
+        "Участники",
+        [
+          ["name", "Имя", "text"],
+          ["initiative", "Инициатива", "number"],
+          ["hp", "Хиты", "number"],
+          ["ac", "КД", "number"],
+          ["conditions", "Состояния", "text"],
+          ["effect", "Временный эффект", "text"],
+          ["expiresRound", "Эффект до раунда · 0 = вручную", "number"],
+          ["owner", "Игрок", "text"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "board",
+    "name": "Поле боя и туман войны",
+    "gm": true,
+    "fields": [
+      ["mapId", "ID материала с картой", "text"],
+      ["columns", "Столбцов", "number"],
+      ["rows", "Строк", "number"],
+      ["feet", "Футов в клетке", "number"],
+      ["fog", "Закрытые клетки · управляются на поле", "hidden"]
+    ],
+    "rows": [
+      [
+        "tokens",
+        "Жетоны",
+        [
+          ["name", "Название", "text"],
+          ["x", "Столбец, от 0", "number"],
+          ["y", "Строка, от 0", "number"],
+          ["owner", "Игрок", "text"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "world",
+    "name": "Календарь мира и путешествия",
+    "gm": true,
+    "fields": [
+      ["year", "Год", "number"],
+      ["month", "Месяц", "number"],
+      ["day", "День", "number"],
+      ["daysPerMonth", "Дней в месяце", "number"],
+      ["monthsPerYear", "Месяцев в году", "number"],
+      ["weather", "Погода", "text"],
+      ["location", "Где сейчас партия", "text"],
+      ["travelDays", "Дней в пути", "number"]
+    ],
+    "rows": [
+      [
+        "events",
+        "Праздники и события",
+        [
+          ["name", "Название", "text"],
+          ["month", "Месяц", "number"],
+          ["day", "День", "number"],
+          ["description", "Описание", "text"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "achievement",
+    "name": "Памятные моменты",
+    "gm": true,
+    "fields": [
+      ["description", "Что произошло", "text"],
+      ["recipient", "Герой или вся партия", "text"],
+      ["date", "Дата", "date"]
+    ]
+  },
+  {
+    "id": "safety",
+    "name": "Комфорт игры",
+    "fields": [
+      ["lines", "Темы, которых не должно быть", "text"],
+      ["veils", "Темы за кадром", "text"],
+      ["notes", "Как сделать игру комфортнее", "text"]
+    ]
+  },
+  {
+    "id": "template",
+    "name": "Заготовки кампаний",
+    "gm": true,
+    "fields": [
+      ["description", "Описание заготовки", "text"],
+      ["setting", "Сеттинг", "text"],
+      ["hook", "Завязка", "text"],
+      ["scenes", "Сцены", "text"],
+      ["npc", "Персонажи", "text"],
+      ["materials", "Какие материалы подготовить", "text"]
+    ]
+  },
+  {
+    "id": "preferences",
+    "name": "Доступность и семейный режим",
+    "fields": [
+      ["largeText", "Крупный шрифт", "boolean"],
+      ["highContrast", "Высокий контраст", "boolean"],
+      ["family", "Упрощённые термины", "boolean"],
+      ["notes", "Личные предпочтения", "text"]
+    ]
+  },
+  {
+    "id": "connections",
+    "name": "Доска связей",
+    "gm": true,
+    "rows": [
+      [
+        "nodes",
+        "Узлы",
+        [
+          ["name", "Название", "text"],
+          ["description", "Описание", "text"],
+          ["linkId", "ID связанной заметки или улики", "text"]
+        ]
+      ],
+      [
+        "edges",
+        "Связи",
+        [
+          ["from", "Название первого узла", "text"],
+          ["to", "Название второго узла", "text"],
+          ["label", "Что их связывает", "text"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "reminder",
+    "name": "Напоминания по игре",
+    "fields": [
+      ["date", "Дата", "date"],
+      ["time", "Время · ЧЧ:ММ", "text"],
+      ["description", "О чём напомнить", "text"],
+      ["done", "Выполнено", "boolean"]
+    ]
+  },
+  {
+    "id": "advancement",
+    "name": "Повышение уровня и мультикласс",
+    "gm": true,
+    "fields": [
+      ["str", "Сила", "number"],
+      ["dex", "Ловкость", "number"],
+      ["con", "Телосложение", "number"],
+      ["int", "Интеллект", "number"],
+      ["wis", "Мудрость", "number"],
+      ["cha", "Харизма", "number"],
+      ["feats", "Выбранные черты и требования", "text"]
+    ],
+    "rows": [
+      [
+        "classes",
+        "Уровни классов",
+        [
+          ["classId", "Класс · английское имя", "text"],
+          ["level", "Уровней", "number"]
+        ]
+      ]
+    ]
+  },
+  {
+    "id": "music",
+    "name": "Музыка и звуки",
+    "gm": true,
+    "fields": [
+      ["url", "HTTPS-ссылка на аудиофайл", "text"],
+      ["description", "Сцена или атмосфера", "text"],
+      ["loop", "Повторять", "boolean"]
+    ]
+  }
+]

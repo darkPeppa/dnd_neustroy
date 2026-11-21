@@ -14,3 +14,15 @@ ios/App/Pods/
 
 data/catalog/*.json
 public/rules/*.json
+
+mobile/.gradle/
+mobile/.kotlin/
+mobile/**/build/
+mobile/local.properties
+mobile/shared/src/commonMain/composeResources/files/*.json
+mobile/shared/src/commonMain/composeResources/files/SOURCES.txt
+mobile/iosApp/Pods/
+mobile/iosApp/*.xcworkspace/xcuserdata/
+mobile/iosApp/*.xcodeproj/xcuserdata/
+*.keystore
+*.jks
