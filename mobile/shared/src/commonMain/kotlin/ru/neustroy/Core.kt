@@ -1,7 +1,7 @@
 package ru.neustroy
 
 import kotlin.math.floor
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 

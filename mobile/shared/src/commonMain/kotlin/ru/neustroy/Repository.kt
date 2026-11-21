@@ -7,9 +7,9 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Clock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
 import kotlinx.serialization.json.*
 
 expect fun platformHttpClient(): HttpClient
@@ -485,7 +485,7 @@ class LocalRepository(private val store: Storage) : Repository {
                         method == "POST" && id.isEmpty() -> {
                             require(b.text("title").isNotBlank())
                             require(
-                                kotlinx.datetime.Instant.parse(b.text("start")) > Clock.System.now()
+                                kotlin.time.Instant.parse(b.text("start")) > Clock.System.now()
                             ) {
                                 "Укажите будущую дату"
                             }

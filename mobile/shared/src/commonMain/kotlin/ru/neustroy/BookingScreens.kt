@@ -111,8 +111,7 @@ fun BuilderScreen(s: AppState) {
                         s.run {
                             val start = localDateTime(date, "00:00")
                             val end =
-                                (kotlinx.datetime.Instant.parse(start) + 24.hoursDuration())
-                                    .toString()
+                                (kotlin.time.Instant.parse(start) + 24.hoursDuration()).toString()
                             busy =
                                 s.repo
                                     .call("availability?start=$start&end=$end")
