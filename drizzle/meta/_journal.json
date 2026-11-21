@@ -43,6 +43,13 @@
       "when": 1795125600005,
       "tag": "0006_campaign_utilities",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795125600006,
+      "tag": "0007_master_directory",
+      "breakpoints": true
     }
   ]
 }

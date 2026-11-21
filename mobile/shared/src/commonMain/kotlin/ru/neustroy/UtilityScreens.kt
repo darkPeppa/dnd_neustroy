@@ -392,6 +392,7 @@ fun AssistantScreen(s: AppState) {
                 "Провайдер",
                 s.provider,
                 mapOf(
+                    "basic" to "Базовые помощники · без ключа",
                     "server" to "Модель сервера / Ollama",
                     "openai" to "OpenAI API",
                     "groq" to "Groq API",
@@ -401,13 +402,14 @@ fun AssistantScreen(s: AppState) {
             ) {
                 s.provider = it
             }
-            if (s.provider != "server")
+            if (s.provider !in listOf("server", "basic"))
                 Input(
                     "API-ключ · только до закрытия приложения",
                     s.apiKey,
                     { s.apiKey = it },
                     password = true,
                 )
+            if (!s.repo.offline) AgentConnectionPanel(s)
             Input("Модель · пусто = стандартная провайдера", s.model, { s.model = it })
             Input("Модель изображений · пусто = стандартная", s.imageModel, { s.imageModel = it })
             Choice(
@@ -436,6 +438,7 @@ fun AssistantScreen(s: AppState) {
                 "summary" to "Секретарь игры",
                 "npc" to "Персонаж мастера",
                 "scenario" to "Подготовка сюжета",
+                "contradictions" to "Сверка записей",
             ),
         ) {
             action = it
@@ -515,22 +518,24 @@ fun PortraitPanel(s: AppState, id: String) {
             }
         }
     }
-    Input("Промпт для портрета", prompt, { prompt = it }, true)
-    Action("Сгенерировать у выбранного провайдера", !s.busy && prompt.isNotBlank()) {
-        s.run {
-            val r = s.assistant("portrait", prompt)
-            file =
-                MobileFile(
-                    "portrait.png",
-                    r.text("mime", "image/png"),
-                    Base64.decode(r.text("base64")),
-                )
+    if (s.agentEnabled) {
+        Input("Промпт для портрета", prompt, { prompt = it }, true)
+        Action("Сгенерировать у выбранного провайдера", !s.busy && prompt.isNotBlank()) {
+            s.run {
+                val r = s.assistant("portrait", prompt)
+                file =
+                    MobileFile(
+                        "portrait.png",
+                        r.text("mime", "image/png"),
+                        Base64.decode(r.text("base64")),
+                    )
+            }
         }
+        Text(
+            "Генерация использует API-провайдера из раздела «Помощники». Поддерживается провайдер изображений; запрос может расходовать его платную квоту.",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
-    Text(
-        "Генерация использует API-провайдера из раздела «Помощники». Поддерживается провайдер изображений; запрос может расходовать его платную квоту.",
-        style = MaterialTheme.typography.bodySmall,
-    )
     if (file != null)
         Action("Сохранить выбранный портрет", !s.busy) {
             s.run {

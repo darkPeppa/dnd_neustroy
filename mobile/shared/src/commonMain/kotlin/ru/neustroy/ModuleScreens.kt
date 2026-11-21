@@ -49,6 +49,7 @@ fun CampaignRulesEditor(s: AppState) {
         }
     }
     Panel("Правила и инструменты") {
+        if (s.can("manage_rules")) PresetControls(s, config) { config = it }
         Choice(
             "Режим",
             config.text("mode"),
@@ -86,6 +87,7 @@ fun CampaignRulesEditor(s: AppState) {
         Action("Сохранить правила игры", s.can("manage_rules") && !s.busy) {
             s.run {
                 s.repo.call("campaigns/$cid/rules-config", "PUT", config)
+                s.refresh()
                 s.notice = "Правила кампании сохранены"
             }
         }
@@ -339,7 +341,7 @@ fun ModulesScreen(s: AppState) {
                         s.notice = "Сигнал отправлен в общий чат"
                     }
                 }
-            if (chosen == "npc")
+            if (s.agentEnabled && chosen == "npc" && s.can("edit_materials"))
                 Action("Создать NPC с помощником", !s.busy) {
                     s.run {
                         val r =

@@ -171,7 +171,10 @@ test("классовый КД без доспеха и свой пакет", () 
   ];
   assert(availableSpells(c).some((s) => s.id === "custom-1"));
   const result = cast(c, "custom-1", 0);
-  assert.equal(result.results[0].damage?.dice.length, 1);
+  assert.equal(
+    result.results[0].damage?.dice.length,
+    result.results[0].attack?.natural === 20 ? 2 : 1,
+  );
 });
 
 test("лучи Eldritch Blast бросаются отдельно без двойного масштабирования", () => {

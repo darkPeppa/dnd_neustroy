@@ -15,7 +15,6 @@ fun CampaignScreen(s: AppState) {
     var tab by remember { mutableStateOf("games") }
     var name by remember { mutableStateOf("") }
     var invite by remember { mutableStateOf("") }
-    var discover by remember { mutableStateOf(emptyList<JsonObject>()) }
     PageColumn {
         Message(s)
         CampaignChoice(s)
@@ -53,30 +52,8 @@ fun CampaignScreen(s: AppState) {
                                 invite = ""
                             }
                         }
-                        Action("Найти открытые игры", !s.busy) {
-                            s.run {
-                                discover =
-                                    s.repo.call("campaigns/discover").jsonArray.map {
-                                        it.jsonObject
-                                    }
-                            }
-                        }
-                        discover.forEach { game ->
-                            Panel(game.text("name")) {
-                                Text(game.text("description"))
-                                Action("Присоединиться как наблюдатель", !s.busy) {
-                                    s.run {
-                                        s.repo.call(
-                                            "campaigns/${game.text("id")}/join-public",
-                                            "POST",
-                                        )
-                                        s.refresh()
-                                        s.campaignId = game.text("id")
-                                    }
-                                }
-                            }
-                        }
                     }
+                if (!s.repo.offline) GameDirectoryPanel(s) { tab = "materials" }
                 s.campaigns.forEach { game ->
                     Panel(game.text("name")) {
                         Text(game.text("description"))
@@ -106,6 +83,8 @@ fun AccessEditor(s: AppState) {
     var title by remember(cid) { mutableStateOf(s.campaign?.text("name") ?: "") }
     var description by remember(cid) { mutableStateOf(s.campaign?.text("description") ?: "") }
     var public by remember(cid) { mutableStateOf(s.campaign?.text("visibility") == "public") }
+    var listing by remember(cid) { mutableStateOf(s.campaign?.get("listing").asObject()) }
+    var tags by remember(cid) { mutableStateOf(listing.strings("tags").joinToString(", ")) }
     var roleId by remember { mutableStateOf("") }
     var roleName by remember { mutableStateOf("") }
     var permissions by remember { mutableStateOf(emptyList<String>()) }
@@ -125,7 +104,31 @@ fun AccessEditor(s: AppState) {
     Panel("Параметры игры") {
         Input("Название", title, { title = it })
         Input("Описание для поиска игроков", description, { description = it }, true)
-        Toggle("Показывать игру другим пользователям сервиса", public) { public = it }
+        if (s.me.flag("isMaster") || public)
+            Toggle("Показывать в каталоге открытых игр", public) { public = it }
+        else if (!s.repo.offline) Text("Для публикации активируйте доступ ведущего в настройках.")
+        if (public) {
+            Choice("Формат игры", listing.text("format", "online"), listingFormats) {
+                listing = listing.changed("format" to it)
+            }
+            Input(
+                "Город для поиска",
+                listing.text("city"),
+                { listing = listing.changed("city" to it.take(100)) },
+            )
+            Input("Темы через запятую", tags, { tags = it })
+            applicationRoles.forEach { (id, label) ->
+                val accepting =
+                    if (listing.containsKey("accepts")) listing.strings("accepts")
+                    else applicationRoles.keys.toList()
+                Toggle("Заявки · $label", id in accepting) { enabled ->
+                    listing =
+                        listing.changed(
+                            "accepts" to if (enabled) accepting + id else accepting - id
+                        )
+                }
+            }
+        }
         Action("Сохранить игру", s.can("publish_campaign") && !s.busy) {
             s.run {
                 s.repo.call(
@@ -135,6 +138,7 @@ fun AccessEditor(s: AppState) {
                         "name" to title,
                         "description" to description,
                         "visibility" to if (public) "public" else "private",
+                        "listing" to listing.changed("tags" to splitTags(tags)),
                     ),
                 )
                 s.refresh()
@@ -148,6 +152,7 @@ fun AccessEditor(s: AppState) {
                 }
             }
     }
+    if (!s.repo.offline && s.can("manage_members")) IncomingApplicationsPanel(s) { load() }
     Panel("Участники и роли") {
         members.forEach { member ->
             Text(member.text("name"))
@@ -675,19 +680,20 @@ fun JournalScreen(s: AppState) {
                         body = s.rollHistory.take(50).reversed().joinToString("\n")
                     }
                 }
-            Action("Сводка игры с помощником", !s.busy) {
-                s.run {
-                    val r =
-                        s.assistant(
-                            "summary",
-                            "Подготовь краткую сводку доступного мне журнала этой игры: события, решения, открытые вопросы.",
-                        )
-                    begin()
-                    title = "Сводка · ${now().take(10)}"
-                    body = r.text("text")
-                    shared = false
+            if (s.agentEnabled)
+                Action("Сводка игры с помощником", !s.busy) {
+                    s.run {
+                        val r =
+                            s.assistant(
+                                "summary",
+                                "Подготовь краткую сводку доступного мне журнала этой игры: события, решения, открытые вопросы.",
+                            )
+                        begin()
+                        title = "Сводка · ${now().take(10)}"
+                        body = r.text("text")
+                        shared = false
+                    }
                 }
-            }
             Action("Экспорт доступного журнала") {
                 s.actions.exportFile(
                     MobileFile(

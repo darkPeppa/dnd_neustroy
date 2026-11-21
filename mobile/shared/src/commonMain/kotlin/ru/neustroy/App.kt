@@ -48,7 +48,7 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
     var campaignId by mutableStateOf("")
     var selectedCharacter by mutableStateOf<JsonObject?>(null)
     var rules by mutableStateOf<RulesData?>(null)
-    var provider by mutableStateOf("server")
+    var provider by mutableStateOf("basic")
     var apiKey by mutableStateOf("")
     var model by mutableStateOf("")
     var imageModel by mutableStateOf("")
@@ -61,6 +61,14 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
 
     val campaign
         get() = campaigns.find { it.text("id") == campaignId }
+
+    val campaignConfig
+        get() = campaign?.get("rules_config").asObject()
+
+    val agentEnabled
+        get() = me.enabled("assistantEnabled") && campaignConfig.enabled("assistant")
+
+    var selectedMaster by mutableStateOf<JsonObject?>(null)
 
     fun can(permission: String) =
         campaign?.let { it.text("owner_id") == userId || permission in it.strings("permissions") }
@@ -99,6 +107,8 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
         run {
             val next = RemoteRepository(ConnectionPolicy.normalize(url), store)
             apiKey = ""
+            provider = "basic"
+            selectedMaster = null
             repo.close()
             repo = next
             store.write("server-url", next.url)
@@ -116,6 +126,8 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
         run {
             repo.close()
             repo = LocalRepository(store)
+            provider = "basic"
+            selectedMaster = null
             store.write("connection-mode", "offline")
             refresh()
         }
@@ -150,8 +162,14 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
         )
     }
 
-    suspend fun assistant(action: String, prompt: String, extra: JsonObject = obj()): JsonObject =
-        repo
+    suspend fun assistant(action: String, prompt: String, extra: JsonObject = obj()): JsonObject {
+        require(agentEnabled) { "Помощник выключен в профиле или настройках игры" }
+        val edition =
+            extra.text("edition", campaignConfig.text("edition", "srd-2024")).let {
+                if (it == "custom") "srd-2024" else it
+            }
+        if (repo.offline) return offlineAgent(this, action, prompt, edition)
+        return repo
             .call(
                 "assistant",
                 "POST",
@@ -161,12 +179,13 @@ class AppState(val store: DeviceStore, val actions: DeviceActions, val scope: Co
                         "provider" to provider,
                         "apiKey" to apiKey,
                         "model" to if (action in listOf("portrait", "map")) imageModel else model,
-                        "edition" to "srd-2024",
+                        "edition" to edition,
                         "campaignId" to campaignId,
                     )
                     .changed(*extra.map { it.key to it.value }.toTypedArray()),
             )
             .jsonObject
+    }
 }
 
 @Composable
@@ -514,96 +533,107 @@ val pages =
 @Composable
 fun MainScreen(s: AppState) {
     var menu by remember { mutableStateOf(false) }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            if (s.selectedCharacter != null) "Лист персонажа"
-                            else pages[s.page] ?: "neustroy",
-                            fontFamily = FontFamily.Serif,
-                        )
-                        Text(
-                            if (s.repo.offline) "На этом устройстве"
-                            else (s.repo as? RemoteRepository)?.url ?: "",
-                            style = MaterialTheme.typography.labelSmall,
+    Box(Modifier.fillMaxSize()) {
+        CampaignBackdrop(s.campaignConfig["appearance"].asObject())
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                if (s.selectedCharacter != null) "Лист персонажа"
+                                else pages[s.page] ?: "neustroy",
+                                fontFamily = FontFamily.Serif,
+                            )
+                            Text(
+                                if (s.repo.offline) "На этом устройстве"
+                                else (s.repo as? RemoteRepository)?.url ?: "",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    },
+                    navigationIcon = { TextButton({ menu = true }) { Text("☰") } },
+                    actions = { TextButton({ s.run { s.refresh() } }) { Text("↻") } },
+                )
+            },
+            bottomBar = {
+                NavigationBar {
+                    listOf("characters", "campaigns", "calendar", "journal", "rules").forEach { page
+                        ->
+                        NavigationBarItem(
+                            selected = s.page == page,
+                            onClick = {
+                                s.page = page
+                                s.selectedCharacter = null
+                            },
+                            icon = {
+                                Text(
+                                    when (page) {
+                                        "characters" -> "◆"
+                                        "campaigns" -> "⚑"
+                                        "calendar" -> "▦"
+                                        "journal" -> "▤"
+                                        else -> "✧"
+                                    }
+                                )
+                            },
+                            label = { Text(pages.getValue(page)) },
                         )
                     }
-                },
-                navigationIcon = { TextButton({ menu = true }) { Text("☰") } },
-                actions = { TextButton({ s.run { s.refresh() } }) { Text("↻") } },
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                listOf("characters", "campaigns", "calendar", "journal", "rules").forEach { page ->
-                    NavigationBarItem(
-                        selected = s.page == page,
-                        onClick = {
-                            s.page = page
-                            s.selectedCharacter = null
-                        },
-                        icon = {
-                            Text(
-                                when (page) {
-                                    "characters" -> "◆"
-                                    "campaigns" -> "⚑"
-                                    "calendar" -> "▦"
-                                    "journal" -> "▤"
-                                    else -> "✧"
+                }
+            },
+        ) { padding ->
+            Column(Modifier.padding(padding)) {
+                if (menu)
+                    DropdownMenu(true, { menu = false }) {
+                        pages
+                            .filterKeys { it != "assistant" || s.agentEnabled }
+                            .filterKeys {
+                                !s.familyMode ||
+                                    it in
+                                        setOf(
+                                            "characters",
+                                            "campaigns",
+                                            "calendar",
+                                            "journal",
+                                            "rules",
+                                            "chat",
+                                            "settings",
+                                        )
+                            }
+                            .forEach { (id, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        s.page = id
+                                        s.selectedCharacter = null
+                                        menu = false
+                                    },
+                                )
+                            }
+                    }
+                if (s.selectedCharacter != null) CharacterScreen(s, s.selectedCharacter!!)
+                else
+                    when (s.page) {
+                        "characters" -> CharacterList(s)
+                        "campaigns" -> CampaignScreen(s)
+                        "calendar" -> CalendarScreen(s)
+                        "journal" -> JournalScreen(s)
+                        "rules" -> RulesScreen(s)
+                        "chat" -> ChatScreen(s)
+                        "assistant" ->
+                            if (s.agentEnabled) AssistantScreen(s)
+                            else
+                                PageColumn {
+                                    Text("Помощник выключен в профиле или настройках игры.")
                                 }
-                            )
-                        },
-                        label = { Text(pages.getValue(page)) },
-                    )
-                }
+                        "builder" -> BuilderScreen(s)
+                        "modules" -> ModulesScreen(s)
+                        "utilities" -> CampaignUtilityScreen(s)
+                        else -> SettingsScreen(s)
+                    }
             }
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding)) {
-            if (menu)
-                DropdownMenu(true, { menu = false }) {
-                    pages
-                        .filterKeys {
-                            !s.familyMode ||
-                                it in
-                                    setOf(
-                                        "characters",
-                                        "campaigns",
-                                        "calendar",
-                                        "journal",
-                                        "rules",
-                                        "chat",
-                                        "settings",
-                                    )
-                        }
-                        .forEach { (id, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = {
-                                    s.page = id
-                                    s.selectedCharacter = null
-                                    menu = false
-                                },
-                            )
-                        }
-                }
-            if (s.selectedCharacter != null) CharacterScreen(s, s.selectedCharacter!!)
-            else
-                when (s.page) {
-                    "characters" -> CharacterList(s)
-                    "campaigns" -> CampaignScreen(s)
-                    "calendar" -> CalendarScreen(s)
-                    "journal" -> JournalScreen(s)
-                    "rules" -> RulesScreen(s)
-                    "chat" -> ChatScreen(s)
-                    "assistant" -> AssistantScreen(s)
-                    "builder" -> BuilderScreen(s)
-                    "modules" -> ModulesScreen(s)
-                    "utilities" -> CampaignUtilityScreen(s)
-                    else -> SettingsScreen(s)
-                }
         }
     }
 }

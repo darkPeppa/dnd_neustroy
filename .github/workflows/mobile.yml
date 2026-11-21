@@ -1,4 +1,4 @@
-name: Native apps
+name: Release builds
 on:
   push:
   pull_request:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: native-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   android:
@@ -27,22 +27,22 @@ jobs:
         with:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
       - uses: gradle/actions/setup-gradle@v4
-      - name: Preserve development signature between test builds
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: .local/android-debug.keystore
           key: neustroy-android-development-signature-v1
       - name: Test, lint and build APK
-        run: mobile/build-android.sh
-      - name: APK checksum
-        working-directory: dist/mobile
-        run: sha256sum neustroy-android.apk > SHA256SUMS.txt
+        run: |
+          for attempt in 1 2 3; do
+            if mobile/build-android.sh; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
+      - run: node scripts/package-artifact.mjs android dist/mobile/neustroy-android.apk artifacts/android
       - uses: actions/upload-artifact@v4
         with:
           name: neustroy-android-apk
-          path: |
-            dist/mobile/neustroy-android.apk
-            dist/mobile/SHA256SUMS.txt
+          path: artifacts/android/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
@@ -67,23 +67,28 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Install Xcode project generator
-        run: brew install xcodegen
-      - name: Build for iPhone without signing
-        run: mobile/build-ios.sh
+      - run: brew install xcodegen
+      - run: mobile/build-ios.sh
       - name: Package unsigned archive
-        run: ditto -c -k --sequesterRsrc --keepParent dist/mobile/neustroy-unsigned.xcarchive dist/mobile/neustroy-ios-unsigned.zip
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/mobile/neustroy-unsigned.xcarchive dist/mobile/neustroy-ios-unsigned.zip
+          node scripts/package-artifact.mjs ios-unsigned dist/mobile/neustroy-ios-unsigned.zip artifacts/ios
       - uses: actions/upload-artifact@v4
         with:
           name: neustroy-ios-unsigned
-          path: dist/mobile/neustroy-ios-unsigned.zip
+          path: artifacts/ios/
           if-no-files-found: error
   desktop:
+    name: Desktop (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-15]
-    runs-on: ${{ matrix.os }}
+        include:
+          - { runner: ubuntu-latest, platform: linux-x64, extension: deb }
+          - { runner: windows-latest, platform: windows-x64, extension: zip }
+          - { runner: macos-15, platform: macos-arm64, extension: dmg }
+          - { runner: macos-15-intel, platform: macos-x64, extension: dmg }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
       GRADLE_USER_HOME: ${{ github.workspace }}/.local/gradle
@@ -100,10 +105,13 @@ jobs:
         with:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build desktop package
+      - name: Build desktop installer
         if: runner.os != 'Windows'
         shell: bash
-        run: mobile/build-desktop.sh :desktopApp:packageDistributionForCurrentOS
+        run: |
+          mobile/build-desktop.sh :desktopApp:packageDistributionForCurrentOS
+          package="$(find mobile/desktopApp/build/compose/binaries/main -name '*.${{ matrix.extension }}' -type f -print -quit)"
+          node scripts/package-artifact.mjs "${{ matrix.platform }}" "$package" artifacts/desktop
       - name: Build portable Windows application
         if: runner.os == 'Windows'
         shell: bash
@@ -111,16 +119,52 @@ jobs:
       - name: Package Windows application
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -LiteralPath mobile/desktopApp/build/compose/binaries/main/app/neustroy -DestinationPath mobile/desktopApp/build/compose/binaries/main/neustroy-windows.zip
+        run: |
+          Compress-Archive -LiteralPath mobile/desktopApp/build/compose/binaries/main/app/neustroy -DestinationPath neustroy-windows.zip
+          node scripts/package-artifact.mjs windows-x64 neustroy-windows.zip artifacts/desktop
       - name: Show packaging errors
         if: failure()
         shell: bash
-        run: find mobile/desktopApp/build/compose/logs -type f -name '*err.txt' -exec cat {} \;
+        run: test ! -d mobile/desktopApp/build/compose/logs || find mobile/desktopApp/build/compose/logs -type f -name '*err.txt' -exec cat {} \;
       - uses: actions/upload-artifact@v4
         with:
-          name: neustroy-desktop-${{ matrix.os }}
-          path: |
-            mobile/desktopApp/build/compose/binaries/main/**/*.deb
-            mobile/desktopApp/build/compose/binaries/main/**/*.dmg
-            mobile/desktopApp/build/compose/binaries/main/neustroy-windows.zip
+          name: neustroy-${{ matrix.platform }}
+          path: artifacts/desktop/
+          if-no-files-found: error
+  web-and-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:local
+      - run: node tests/local-runtime-smoke.mjs --accounts
+      - name: Bundle web server
+        run: |
+          tar -czf neustroy-web.tar.gz VERSION dist/client dist/server dist/local-api.mjs migrations scripts/local-server.mjs scripts/telegram-poll.mjs
+          node scripts/package-artifact.mjs web neustroy-web.tar.gz artifacts/web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-web
+          path: artifacts/web/
+          if-no-files-found: error
+      - name: Build and verify Docker image
+        run: |
+          docker build --build-arg NEUSTROY_VERSION="$(cat VERSION)" -t neustroy-api:local .
+          docker run -d --name neustroy-smoke -p 127.0.0.1:8787:8787 neustroy-api:local
+          curl --fail --retry 15 --retry-all-errors --retry-delay 1 http://127.0.0.1:8787/api/auth/status
+          docker rm -f neustroy-smoke
+      - run: |
+          docker save neustroy-api:local | gzip > neustroy-server-linux-amd64.tar.gz
+          node scripts/package-artifact.mjs server-linux-x64 neustroy-server-linux-amd64.tar.gz artifacts/server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-server-image
+          path: artifacts/server/
           if-no-files-found: error

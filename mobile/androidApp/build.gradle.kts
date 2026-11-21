@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseVersion = rootProject.file("../VERSION").readText().trim()
+val versionParts = releaseVersion.split(".").map(String::toInt)
+
 android {
     namespace = "ru.neustroy.app"
     compileSdk = 36
@@ -11,8 +14,8 @@ android {
         applicationId = "ru.neustroy.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.2.0"
+        versionCode = versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
+        versionName = releaseVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

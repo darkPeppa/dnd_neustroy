@@ -1,5 +1,7 @@
 import { TelegramConnection, ServiceConnections } from "./Connections";
 import { useEffect, useState } from "react";
+import { MasterOffice } from "./MasterDirectory";
+import { AgentToggle } from "./AgentSettings";
 import { Settings, Check, Copy, Bell, Download } from "lucide-react";
 import type { AppContext } from "../main";
 import { request, enablePush, saveFile, offlineMode } from "../api";
@@ -48,11 +50,12 @@ export function Admin({ ctx }: { ctx: AppContext }) {
       </div>
       <div className="tabs">
         {[
-          ["bookings", ctx.me.isAdmin ? "Все заявки" : "Мои заявки"],
+          ["bookings", "Мои заявки"],
+          ["master", "Кабинет ведущего"],
           ["devices", "Устройства и доступ"],
           ...(ctx.me.isAdmin
             ? [
-                ["config", "Сервис и цены"],
+                ["config", "Сервис"],
                 ["integrations", "Интеграции"],
               ]
             : []),
@@ -66,6 +69,8 @@ export function Admin({ ctx }: { ctx: AppContext }) {
           </button>
         ))}
       </div>
+      {tab === "master" && <MasterOffice ctx={ctx} />}
+      {tab === "devices" && <AgentToggle ctx={ctx} />}
       {tab === "bookings" && (
         <>
           {!bookings.length ? (
@@ -173,7 +178,7 @@ export function Admin({ ctx }: { ctx: AppContext }) {
                     Добавить в календарь
                   </button>
                 )}
-                {ctx.me.isAdmin && b.status === "pending" && (
+                {b.gm_id === ctx.me.user.id && b.status === "pending" && (
                   <>
                     <Field label="Согласованная дата · ваше местное время">
                       <input
@@ -436,39 +441,6 @@ export function Admin({ ctx }: { ctx: AppContext }) {
             }, "Настройки сохранены");
           }}
         >
-          <h2>Стоимость услуг, ₽</h2>
-          <div className="three-col">
-            {Object.keys(config.pricing).map((k) => (
-              <Field
-                key={k}
-                label={
-                  {
-                    hour: "Час игры",
-                    extraPlayer: "Игрок сверх четырёх",
-                    offline: "Выезд мастера",
-                    customCharacter: "Подготовка листа",
-                    chronicle: "Хроника",
-                    video: "Видеозапись",
-                    miniatures: "Одна миниатюра",
-                  }[k] || k
-                }
-              >
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  max="1000000"
-                  value={config.pricing[k]}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      pricing: { ...config.pricing, [k]: +e.target.value },
-                    })
-                  }
-                />
-              </Field>
-            ))}
-          </div>
           <Field label="Часовой пояс мастера">
             <input
               value={config.timezone}

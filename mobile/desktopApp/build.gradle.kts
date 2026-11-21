@@ -25,7 +25,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "neustroy"
-            packageVersion = "1.0.0"
+            packageVersion = rootProject.file("../VERSION").readText().trim()
             description = "Листы персонажей и инструменты для настольных игр"
             vendor = "neustroy"
             modules("java.desktop", "java.net.http", "jdk.unsupported")

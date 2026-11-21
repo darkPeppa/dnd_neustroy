@@ -17,6 +17,6 @@ node scripts/node-runtime.mjs scripts/local-server.mjs --accounts
 
 ## Попробовать настольный клиент
 
-Скачайте macOS DMG из артефактов [Native apps](https://github.com/darkPeppa/dnd_neustroy/actions/workflows/mobile.yml) или соберите его командой `bash mobile/build-desktop.sh :desktopApp:packageDmg` при наличии JDK 21 и Android SDK. Откройте DMG и перенесите **neustroy** в «Программы». Сборка для тестирования без нотариального заверения. DMG, собранный на Apple Silicon, предназначен для Mac с этим процессором.
+Скачайте `neustroy-macos-arm64` или `neustroy-macos-x64` из артефактов [Release builds](https://github.com/darkPeppa/dnd_neustroy/actions/workflows/mobile.yml) или соберите DMG командой `bash mobile/build-desktop.sh :desktopApp:packageDmg` при наличии JDK 21 и Android SDK. Откройте DMG и перенесите **neustroy** в «Программы». Сборка для тестирования без нотариального заверения. DMG, собранный на Apple Silicon, предназначен для Mac с этим процессором.
 
 В приложении выберите **Начать локально** или введите `http://127.0.0.1:8787` и войдите в тот же аккаунт, что и в браузере. Сервер и настольное окно запускаются отдельно. Telegram подключается в настройках владельца по [инструкции](README.md).

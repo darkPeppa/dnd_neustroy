@@ -42,14 +42,36 @@ fun BuilderScreen(s: AppState) {
     var time by remember { mutableStateOf("19:00") }
     var booked by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(emptyList<JsonObject>()) }
+    var showMasters by remember { mutableStateOf(false) }
+    LaunchedEffect(s.repo) {
+        if (!s.repo.offline && s.selectedMaster == null)
+            try {
+                s.selectedMaster = s.repo.call("masters").jsonArray.firstOrNull()?.jsonObject
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+    }
     val pricing =
-        (s.settings["pricing"] as? JsonObject) ?: defaultSettings.getValue("pricing").jsonObject
+        (s.selectedMaster?.get("pricing") as? JsonObject)
+            ?: (s.settings["pricing"] as? JsonObject)
+            ?: defaultSettings.getValue("pricing").jsonObject
     fun set(key: String, value: Any?) {
         data = data.changed(key to value)
         s.store.write("booking-draft", data.toString())
     }
     PageColumn {
         Message(s)
+        if (!s.repo.offline)
+            Panel("Ведущий · ${s.selectedMaster?.text("name")?:"neustroy"}") {
+                Action(if (showMasters) "Свернуть каталог" else "Выбрать ведущего") {
+                    showMasters = !showMasters
+                }
+                if (showMasters)
+                    MasterFinderPanel(s, s.selectedMaster?.text("handle") ?: "") {
+                        s.selectedMaster = it
+                        showMasters = false
+                    }
+            }
         Text("Заявка на игру · шаг ${step+1} из 5", style = MaterialTheme.typography.titleLarge)
         Text(
             "Предварительная стоимость: ${quote(data,pricing)} ₽. Бронь подтверждает мастер.",
@@ -114,7 +136,11 @@ fun BuilderScreen(s: AppState) {
                                 (kotlin.time.Instant.parse(start) + 24.hoursDuration()).toString()
                             busy =
                                 s.repo
-                                    .call("availability?start=$start&end=$end")
+                                    .call(
+                                        "availability?start=$start&end=$end" +
+                                            (s.selectedMaster?.text("handle")?.let { "&master=$it" }
+                                                ?: "")
+                                    )
                                     .jsonObject
                                     .rows("busy")
                         }
@@ -307,7 +333,11 @@ fun BuilderScreen(s: AppState) {
                         val payload =
                             if (date.isBlank()) JsonObject(data.filterKeys { it != "start" })
                             else data.changed("start" to localDateTime(date, time))
-                        val r = s.repo.call("bookings", "POST", payload).jsonObject
+                        val request =
+                            s.selectedMaster?.text("handle")?.let {
+                                payload.changed("masterHandle" to it)
+                            } ?: payload
+                        val r = s.repo.call("bookings", "POST", request).jsonObject
                         booked = r.text("id")
                         s.store.write("booking-draft", null)
                     }
@@ -336,7 +366,8 @@ fun SettingsScreen(s: AppState) {
             mapOf(
                 "profile" to "Устройство и доступ",
                 "bookings" to "Заявки",
-                "shop" to "Услуги и магазин",
+                "shop" to "Ведущие и услуги",
+                "master" to "Кабинет ведущего",
                 "config" to "Настройки сервиса",
                 "integrations" to "Подключения",
             ),
@@ -350,6 +381,18 @@ fun SettingsScreen(s: AppState) {
             if (!s.me.flag("isAdmin")) OwnerSetup(s)
         }
         if (tab == "integrations" && !s.repo.offline && s.me.flag("isAdmin")) ServiceConnections(s)
+        if (tab == "profile")
+            Panel("Помощник") {
+                Toggle(
+                    "Показывать помощника, генерацию и разбор листов",
+                    s.me.enabled("assistantEnabled"),
+                ) {
+                    s.run {
+                        s.repo.call("agent-preferences", "PUT", obj("enabled" to it))
+                        s.refresh()
+                    }
+                }
+            }
         if (tab == "profile") {
             Panel("Чтение и управление") {
                 Toggle("Крупный шрифт", s.largeText) {
@@ -423,7 +466,7 @@ fun SettingsScreen(s: AppState) {
                         Text(d.text("wishes"))
                         Text(d.text("contact"))
                         if (d.text("start").isNotEmpty()) Text(displayDate(d.text("start")))
-                        if (s.me.flag("isAdmin") && b.text("status") == "pending") {
+                        if (b.text("gm_id") == s.userId && b.text("status") == "pending") {
                             var start by remember(b) { mutableStateOf(d.text("start")) }
                             Input(
                                 "Согласованная дата · ISO с часовым поясом",
@@ -455,50 +498,20 @@ fun SettingsScreen(s: AppState) {
                     }
                 }
             }
-            "shop" -> {
-                Panel("Услуги") {
-                    val p = s.settings["pricing"]?.jsonObject ?: obj()
-                    p.forEach { (key, v) ->
-                        Text(
-                            "${mapOf("hour" to "Час игры","extraPlayer" to "Игрок сверх четырёх","offline" to "Выезд мастера","customCharacter" to "Подготовка листа","chronicle" to "Хроника","video" to "Видеозапись","miniatures" to "Миниатюра")[key]?:key}: ${v.jsonPrimitive.content} ₽"
-                        )
+            "master" ->
+                if (s.repo.offline) Text("Кабинет ведущего доступен после входа на сервер")
+                else MasterOfficePanel(s)
+            "shop" ->
+                if (s.repo.offline) {
+                    Text("Для каталога ведущих подключитесь к серверу.")
+                    Action("Собрать локальный черновик") { s.page = "builder" }
+                } else
+                    MasterFinderPanel(s, "") {
+                        s.selectedMaster = it
+                        s.page = "builder"
                     }
-                    Action("Собрать заявку") { s.page = "builder" }
-                }
-                s.settings.rows("products").forEach { product ->
-                    Panel(product.text("name")) {
-                        Text(product.text("description"))
-                        Text("${product.number("price")} ₽")
-                        Text(s.settings.text("contact"))
-                    }
-                }
-                Text(s.settings.text("about"))
-                Text(s.settings.text("contact"))
-                if (s.settings.text("offer").isNotEmpty())
-                    Panel("Публичная оферта") { Text(s.settings.text("offer")) }
-                if (s.settings.text("agreement").isNotEmpty())
-                    Panel("Пользовательское соглашение") { Text(s.settings.text("agreement")) }
-            }
             "config" ->
                 if (s.me.flag("isAdmin")) {
-                    val p = config["pricing"]?.jsonObject ?: obj()
-                    Panel("Цены") {
-                        p.forEach { (key, value) ->
-                            Input(
-                                key,
-                                value.jsonPrimitive.content,
-                                { v ->
-                                    v.toIntOrNull()?.let {
-                                        config =
-                                            config.changed(
-                                                "pricing" to
-                                                    p.changed(key to it.coerceIn(0, 1000000))
-                                            )
-                                    }
-                                },
-                            )
-                        }
-                    }
                     for ((key, label) in
                         mapOf(
                             "about" to "О мастере",

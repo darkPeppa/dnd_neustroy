@@ -4,6 +4,7 @@ import type { AppContext } from "../main";
 import { request, appFetch, authHeaders, saveFile } from "../api";
 import { Field, Modal } from "../ui";
 import { assistantRequest } from "./Helpers";
+import { CampaignPresets } from "./GameDirectory";
 type Row = Record<string, any>;
 type Spec = {
   id: string;
@@ -125,6 +126,14 @@ export function GameTools({
     return (
       <section className="card">
         <h2>Правила и модули кампании</h2>
+        {rules && (
+          <CampaignPresets
+            ctx={ctx}
+            cid={cid}
+            config={config}
+            setConfig={setConfig}
+          />
+        )}
         <Field label="Режим">
           <select
             value={config.mode}
@@ -181,7 +190,9 @@ export function GameTools({
           disabled={busy || !rules}
           onClick={() =>
             perform(() =>
-              request(`campaigns/${cid}/rules-config`, "PUT", config),
+              request(`campaigns/${cid}/rules-config`, "PUT", config).then(
+                (saved) => ctx.setCampaign(cid, saved),
+              ),
             )
           }
         >
@@ -242,7 +253,7 @@ export function GameTools({
           СТОП · сделать паузу
         </button>
       )}
-      {kind === "npc" && gm && (
+      {ctx.agentEnabled && kind === "npc" && gm && (
         <button
           className="ghost"
           disabled={busy}

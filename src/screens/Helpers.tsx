@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ConnectAgent } from "./AgentSettings";
 import { request, appFetch, authHeaders } from "../api";
 import type { AppContext } from "../main";
 import { Field, Modal } from "../ui";
@@ -10,7 +11,7 @@ type Config = {
   imageModel: string;
 };
 let connection: Config = {
-  provider: "server",
+  provider: "basic",
   apiKey: "",
   model: "",
   imageModel: "",
@@ -18,6 +19,7 @@ let connection: Config = {
 export async function assistantRequest(data: Record<string, unknown>) {
   return request("assistant", "POST", {
     ...connection,
+    campaignId: localStorage.getItem("neustroy-campaign") || "",
     ...data,
     model: ["portrait", "map"].includes(String(data.action))
       ? connection.imageModel
@@ -51,6 +53,7 @@ export function AssistantPanel({ ctx }: { ctx: AppContext }) {
               value={config.provider}
               onChange={(e) => update({ ...config, provider: e.target.value })}
             >
+              <option value="basic">Базовые помощники · без ключа</option>
               <option value="server">Модель сервера / Ollama</option>
               <option value="openrouter">
                 OpenRouter · доступен бесплатный маршрутизатор
@@ -60,7 +63,7 @@ export function AssistantPanel({ ctx }: { ctx: AppContext }) {
               <option value="deepseek">DeepSeek API</option>
             </select>
           </Field>
-          {config.provider !== "server" && (
+          {!["basic", "server"].includes(config.provider) && (
             <Field label="API-ключ · хранится в памяти этой вкладки">
               <input
                 type="password"
@@ -70,6 +73,14 @@ export function AssistantPanel({ ctx }: { ctx: AppContext }) {
               />
             </Field>
           )}
+          <ConnectAgent
+            ctx={ctx}
+            provider={config.provider}
+            apiKey={config.apiKey}
+            linked={(p) =>
+              update({ ...connection, provider: p, apiKey: "", model: "" })
+            }
+          />
           <Field label="Текстовая модель · пусто = стандартная">
             <input
               value={config.model}
@@ -97,10 +108,9 @@ export function AssistantPanel({ ctx }: { ctx: AppContext }) {
             />
           </Field>
           <p className="muted">
-            Ключ отправляется выбранному API-провайдеру через ваш сервер. Он не
-            сохраняется в базе и очищается при закрытии страницы. Подпиской на
-            ChatGPT/Codex можно пользоваться в соответствующем клиенте с
-            подключённым MCP-плагином neustroy.
+            Базовые помощники работают со справочником и шаблонами. Подключённый
+            аккаунт или сохранённый ключ позволяет выбрать внешнюю модель.
+            ChatGPT/Codex используют MCP в своём клиенте.
           </p>
           <a
             href="https://chatgpt.com/"
@@ -265,17 +275,27 @@ export function SheetImport({
   return (
     <>
       <label className="button ghost">
-        {busy ? "Читаю лист…" : "Импорт JSON / PDF / фото"}
+        {busy
+          ? "Читаю лист…"
+          : ctx.agentEnabled
+            ? "Импорт JSON / PDF / фото"
+            : "Импорт JSON"}
         <input
           hidden
           disabled={busy}
           type="file"
-          accept="application/json,application/pdf,image/png,image/jpeg,image/webp,text/plain"
+          accept={
+            ctx.agentEnabled
+              ? "application/json,application/pdf,image/png,image/jpeg,image/webp,text/plain"
+              : "application/json,.json"
+          }
           onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;
             setBusy(true);
             try {
+              if (!ctx.agentEnabled && !f.name.toLowerCase().endsWith(".json"))
+                throw Error("При выключенном помощнике доступен импорт JSON");
               setDrafts(await extractSheet(f));
               setIndex(0);
             } catch (error) {
@@ -402,71 +422,75 @@ export function CharacterExtras({
           />
         </label>
       </div>
-      <Field label="Промпт для портрета или предыстории">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={4}
-        />
-      </Field>
-      <div className="row wrap">
-        <button
-          className="ghost"
-          disabled={busy || !prompt.trim()}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const r = await assistantRequest({
-                action: "portrait",
-                prompt: `${character.name}, ${character.classId}. ${prompt}`,
-              });
-              await preview(
-                new Blob(
-                  [Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0))],
-                  { type: r.mime },
-                ),
-              );
-            } catch (e) {
-              ctx.toast((e as Error).message, true);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Создать портрет
-        </button>
-        <button
-          className="ghost"
-          disabled={busy || !prompt.trim()}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const r = await assistantRequest({
-                action: "backstory",
-                prompt: JSON.stringify({
-                  request: prompt,
-                  name: character.name,
-                  class: character.classId,
-                  ancestry: character.ancestry,
-                  background: character.background,
-                }),
-              });
-              setStory(r.text);
-            } catch (e) {
-              ctx.toast((e as Error).message, true);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Создать историю
-        </button>
-      </div>
-      <p className="muted">
-        Модель и ключ выбираются в разделе «Помощники». Генерация может
-        расходовать квоту провайдера. Изображение и история сохраняются после
-        вашей проверки.
-      </p>
+      {ctx.agentEnabled && (
+        <>
+          <Field label="Промпт для портрета или предыстории">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={4}
+            />
+          </Field>
+          <div className="row wrap">
+            <button
+              className="ghost"
+              disabled={busy || !prompt.trim()}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await assistantRequest({
+                    action: "portrait",
+                    prompt: `${character.name}, ${character.classId}. ${prompt}`,
+                  });
+                  await preview(
+                    new Blob(
+                      [Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0))],
+                      { type: r.mime },
+                    ),
+                  );
+                } catch (e) {
+                  ctx.toast((e as Error).message, true);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Создать портрет
+            </button>
+            <button
+              className="ghost"
+              disabled={busy || !prompt.trim()}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await assistantRequest({
+                    action: "backstory",
+                    prompt: JSON.stringify({
+                      request: prompt,
+                      name: character.name,
+                      class: character.classId,
+                      ancestry: character.ancestry,
+                      background: character.background,
+                    }),
+                  });
+                  setStory(r.text);
+                } catch (e) {
+                  ctx.toast((e as Error).message, true);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Создать историю
+            </button>
+          </div>
+          <p className="muted">
+            Модель и ключ выбираются в разделе «Помощники». Генерация может
+            расходовать квоту провайдера. Изображение и история сохраняются
+            после вашей проверки.
+          </p>
+        </>
+      )}
       {picked && (
         <button
           disabled={busy}

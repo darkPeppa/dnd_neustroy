@@ -30,6 +30,7 @@ const initial = {
   consent: false,
   start: "",
 };
+import { MasterFinder, type Profile } from "./MasterDirectory";
 const steps = [
   "Компания",
   "Опыт и правила",
@@ -55,7 +56,18 @@ export function Builder({ ctx }: { ctx: AppContext }) {
     [busy, setBusy] = useState(false),
     [submitted, setSubmitted] = useState<any>(),
     [availability, setAvailability] = useState<any>(),
-    [availabilityError, setAvailabilityError] = useState("");
+    [availabilityError, setAvailabilityError] = useState(""),
+    [master, setMaster] = useState<Profile>(),
+    [showMasters, setShowMasters] = useState(false);
+  useEffect(() => {
+    request<Profile[]>("masters")
+      .then((rows) => {
+        const chosen = sessionStorage.getItem("neustroy-selected-master");
+        setMaster(rows.find((r) => r.handle === chosen) || rows[0]);
+      })
+      .catch(() => {});
+  }, []);
+  const prices = master?.pricing || ctx.settings.pricing;
   const patch = (p: any) => setForm((f: any) => ({ ...f, ...p }));
   useEffect(() => {
     localStorage.setItem("questbook-booking", JSON.stringify(form));
@@ -67,7 +79,7 @@ export function Builder({ ctx }: { ctx: AppContext }) {
     try {
       setAvailability(
         await request(
-          `availability?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`,
+          `availability?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}${master ? "&master=" + encodeURIComponent(master.handle) : ""}`,
         ),
       );
     } catch (e) {
@@ -76,8 +88,8 @@ export function Builder({ ctx }: { ctx: AppContext }) {
   }
   useEffect(() => {
     if (step === 5) loadAvailability();
-  }, [step]);
-  const quote = price(form, ctx.settings.pricing);
+  }, [step, master?.handle]);
+  const quote = price(form, prices);
   const choices = (
     key: string,
     values: [string, string][],
@@ -197,9 +209,25 @@ export function Builder({ ctx }: { ctx: AppContext }) {
     );
   return (
     <>
+      <section className="card">
+        <strong>Ведущий · {master?.name || "neustroy"}</strong>
+        <button className="ghost" onClick={() => setShowMasters(!showMasters)}>
+          {showMasters ? "Свернуть каталог" : "Выбрать ведущего"}
+        </button>
+      </section>
+      {showMasters && (
+        <MasterFinder
+          ctx={ctx}
+          selected={master?.handle}
+          onPick={(p) => {
+            setMaster(p);
+            sessionStorage.setItem("neustroy-selected-master", p.handle);
+            setShowMasters(false);
+          }}
+        />
+      )}
       <div className="page-heading">
         <div>
-          <span className="eyebrow">ИСТОРИЯ, В КОТОРОЙ ГЛАВНЫЕ — ВЫ</span>
           <h1>Ваше идеальное приключение</h1>
           <p>
             Несколько вопросов — и у мастера появится замысел именно для вас.
@@ -549,15 +577,12 @@ export function Builder({ ctx }: { ctx: AppContext }) {
                     [
                       [
                         "chronicle",
-                        `Иллюстрированная хроника · ${money(ctx.settings.pricing.chronicle)}`,
+                        `Иллюстрированная хроника · ${money(prices.chronicle)}`,
                       ],
-                      [
-                        "video",
-                        `Видеозапись · ${money(ctx.settings.pricing.video)}`,
-                      ],
+                      ["video", `Видеозапись · ${money(prices.video)}`],
                       [
                         "miniatures",
-                        `Миниатюры · ${money(ctx.settings.pricing.miniatures)} за игрока`,
+                        `Миниатюры · ${money(prices.miniatures)} за игрока`,
                       ],
                     ],
                     true,
@@ -687,6 +712,7 @@ export function Builder({ ctx }: { ctx: AppContext }) {
                     try {
                       const data = bookingSchema.parse({
                         ...form,
+                        masterHandle: master?.handle,
                         start: form.start || undefined,
                         settings: [
                           ...form.settings,

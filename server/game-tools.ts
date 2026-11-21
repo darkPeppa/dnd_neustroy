@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rulesConfig } from "./game-directory";
 import { AccessError, getCampaign, CampaignAccess } from "./campaigns";
 import type { Env } from "./index";
 type User = { id: string; name: string };
@@ -298,16 +299,7 @@ export async function gameTools(
   if (kind === "rules-config") {
     if (method === "GET") return json(JSON.parse(c.rules_config));
     await getCampaign(e, c.id, u, "manage_rules");
-    const b = z
-      .object({
-        mode: z.enum(["rules", "custom"]),
-        edition: z.enum(["srd-2014", "srd-2024", "custom"]),
-        enabledModules: z.array(z.string().max(80)).max(50),
-        custom: z.record(z.string(), z.unknown()).default({}),
-      })
-      .parse(await body());
-    if (JSON.stringify(b).length > 20000)
-      throw new AccessError(413, "Слишком большая настройка");
+    const b = rulesConfig.parse(await body());
     await e.DB.prepare("UPDATE campaigns SET rules_config=? WHERE id=?")
       .bind(JSON.stringify(b), c.id)
       .run();

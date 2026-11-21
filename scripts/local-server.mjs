@@ -141,6 +141,9 @@ const env = {
       "PUSH_GATEWAY_URL",
       "PUSH_GATEWAY_SECRET",
       "CONFIG_ENCRYPTION_KEY",
+      "GM_ACCESS_PRICE_RUB",
+      "YOOKASSA_SHOP_ID",
+      "YOOKASSA_SECRET",
     ]
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k]]),

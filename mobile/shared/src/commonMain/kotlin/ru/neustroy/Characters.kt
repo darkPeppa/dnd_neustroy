@@ -23,7 +23,9 @@ fun CharacterList(s: AppState) {
         OutlinedButton(
             onClick = {
                 s.actions.importFile { file ->
-                    if (file != null && file.mime.startsWith("image/"))
+                    if (file != null && !s.agentEnabled && !file.name.endsWith(".json", true))
+                        s.error = "При выключенном помощнике доступен импорт JSON"
+                    else if (file != null && file.mime.startsWith("image/"))
                         s.run {
                             val response =
                                 s.assistant(
@@ -74,7 +76,7 @@ fun CharacterList(s: AppState) {
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Импорт листа · JSON / PDF / текст")
+            Text(if (s.agentEnabled) "Импорт листа · JSON / PDF / фото" else "Импорт листа · JSON")
         }
         if (preview != null)
             Panel("Проверка распознанного листа") {

@@ -551,3 +551,20 @@ hr {
   --line: #8b9aae;
   color: #fff;
 }
+
+.campaign-backdrop {
+  min-height: 96px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  align-items: center;
+  padding: 1rem;
+  color: #f4ecdb;
+}
+.campaign-config-extras {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.master-directory article + article {
+  margin-top: 12px;
+}

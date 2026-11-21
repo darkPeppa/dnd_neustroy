@@ -26,3 +26,5 @@ mobile/iosApp/*.xcworkspace/xcuserdata/
 mobile/iosApp/*.xcodeproj/xcuserdata/
 *.keystore
 *.jks
+
+artifacts/

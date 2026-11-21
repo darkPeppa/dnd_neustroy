@@ -8,6 +8,8 @@ import {
   materialVisible,
 } from "./campaigns";
 import type { Env } from "./index";
+import { assistantEnabled, storedAgentKey } from "./agent-connections";
+import { basicAgent } from "../src/basic-agents";
 const providers = {
   openai: { base: "https://api.openai.com/v1", model: "gpt-5.4-mini" },
   groq: { base: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-20b" },
@@ -31,8 +33,8 @@ const input = z.object({
   ]),
   prompt: z.string().trim().min(1).max(50000),
   provider: z
-    .enum(["server", "openai", "groq", "openrouter", "deepseek"])
-    .default("server"),
+    .enum(["basic", "server", "openai", "groq", "openrouter", "deepseek"])
+    .default("basic"),
   apiKey: z.string().max(1000).default(""),
   model: z
     .string()
@@ -60,6 +62,11 @@ export async function assistant(
   if (r.method !== "POST")
     throw new AccessError(405, "Метод не поддерживается");
   const b = input.parse(await body());
+  if (!(await assistantEnabled(e, u)))
+    throw new AccessError(403, "Помощник выключен в настройках профиля");
+  const game = b.campaignId ? await getCampaign(e, b.campaignId, u) : null;
+  if (game && JSON.parse(game.rules_config).assistant === false)
+    throw new AccessError(403, "Мастер выключил помощника в этой игре");
   const at = Date.now();
   const rate = await e.DB.prepare(
     "INSERT INTO auth_limits(key,count,reset_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END RETURNING count",
@@ -94,11 +101,12 @@ export async function assistant(
       source: b.edition,
     }));
   let context = "";
+  let basicContext: Parameters<typeof basicAgent>[3] = {};
   if (
-    b.campaignId &&
+    game &&
     ["summary", "scenario", "contradictions", "map"].includes(b.action)
   ) {
-    const c = await getCampaign(e, b.campaignId, u);
+    const c = game;
     if (b.action === "map")
       await getCampaign(e, b.campaignId, u, "edit_materials");
     const notes = (
@@ -130,13 +138,29 @@ export async function assistant(
         "SELECT kind,text,user_name,created_at FROM game_log WHERE campaign_id=? AND (visibility='shared' OR user_id=?) ORDER BY created_at DESC LIMIT 100",
       )
         .bind(c.id, u.id)
-        .all()
+        .all<{ text: string }>()
     ).results;
+    basicContext = { notes: visible, log: logs };
     context = JSON.stringify({
       campaign: c.name,
       notes: visible,
       log: logs,
     }).slice(0, 30000);
+  }
+  if (
+    b.provider === "basic" ||
+    (b.provider === "server" && !e.ASSISTANT_BASE_URL)
+  ) {
+    const text = basicAgent(b.action, b.prompt, sources, basicContext);
+    if (text !== null)
+      return Response.json(
+        { text, sources: b.action === "rules" ? sources : [], mode: "basic" },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    throw new AccessError(
+      503,
+      "Для генерации изображений и разбора листов выберите модель с поддержкой этой функции",
+    );
   }
   const config =
     b.provider === "server"
@@ -145,27 +169,10 @@ export async function assistant(
           model: e.ASSISTANT_MODEL || "qwen3:4b",
         }
       : providers[b.provider];
-  const key = b.provider === "server" ? e.ASSISTANT_API_KEY || "" : b.apiKey;
-  if (!config.base) {
-    if (b.action === "rules")
-      return Response.json(
-        {
-          text: sources.length
-            ? "Модель не подключена. Найденные открытые правила:\n\n" +
-              sources
-                .map((s) => s.name + " [" + s.source + "]\n" + s.text)
-                .join("\n\n")
-            : "Модель не подключена. Откройте библиотеку SRD и найдите правило по названию на английском.",
-          sources,
-          mode: "search",
-        },
-        { headers: { "Cache-Control": "no-store" } },
-      );
-    throw new AccessError(
-      503,
-      "Подключите модель сервера или выберите провайдера и API-ключ. Подписка на чат используется через отдельного MCP-агента.",
-    );
-  }
+  const key =
+    b.provider === "server"
+      ? e.ASSISTANT_API_KEY || ""
+      : b.apiKey || (await storedAgentKey(e, u, b.provider));
   if (b.provider !== "server" && !key)
     throw new AccessError(400, "Введите API-ключ выбранного провайдера");
   const base = new URL(config.base);

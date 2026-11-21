@@ -18,6 +18,14 @@ import {
   validFolder,
 } from "./campaigns";
 import { assistant } from "./assistant";
+import { agentConnections, assistantEnabled } from "./agent-connections";
+import {
+  isMaster,
+  masterRoutes,
+  publicMasters,
+  requireMaster,
+} from "./masters";
+import { discoverGames, gameApplications, presets } from "./game-directory";
 import { gameTools } from "./game-tools";
 import { configuredEnv, integrationSettings } from "./secrets";
 import { telegramAccount, telegramWebhook } from "./telegram";
@@ -43,6 +51,9 @@ export interface Env {
   ASSISTANT_API_KEY?: string;
   ASSISTANT_MODEL?: string;
   CONFIG_ENCRYPTION_KEY?: string;
+  GM_ACCESS_PRICE_RUB?: string;
+  YOOKASSA_SHOP_ID?: string;
+  YOOKASSA_SECRET?: string;
   TELEGRAM_BOT_USERNAME?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
 }
@@ -276,10 +287,11 @@ async function confirmTime(
   start: string,
   end: string,
   update: D1PreparedStatement,
+  checkExternal = true,
 ) {
   if (Date.parse(start) < Date.now())
     fail(400, "Нельзя подтвердить прошедшую дату");
-  const busy = await externalBusy(e, start, end);
+  const busy = checkExternal ? await externalBusy(e, start, end) : [];
   if (busy.some((b) => b.start < end && b.end > start))
     fail(409, "Это время занято в календаре мастера");
   await e.DB.batch([
@@ -336,12 +348,19 @@ export async function api(
   if (p[0] === "integrations")
     return integrationSettings(r, e, u, u.id === siteOwner, () => body(r));
   if (p[0] === "telegram") return telegramAccount(r, e, u, p);
+  if (p[0] === "masters")
+    return masterRoutes(r, e, u, siteOwner, await settings(e), p);
+  if (p[0] === "campaign-presets") return presets(r, e, u, p[1]);
+  if (["agent-preferences", "agent-connection"].includes(p[0]))
+    return agentConnections(r, e, u, p);
   if (p[0] === "assistant")
     return assistant(r, e, u, () => body(r, 7 * 1024 * 1024));
   if (p[0] === "me" && method === "GET")
     return json({
       user: u,
       isAdmin: u.id === siteOwner,
+      isMaster: await isMaster(e, u.id, siteOwner),
+      assistantEnabled: await assistantEnabled(e, u),
       accounts: e.AUTH_ENABLED === "true",
       local: e.LOCAL_DEV === "true" || e.LOCAL_SERVER === "true",
       integrations: {
@@ -575,10 +594,16 @@ export async function api(
         throw new HttpError(response.status, (value as any).error);
       return value;
     });
+  if (p[0] === "campaigns" && p[1] === "discover" && method === "GET")
+    return discoverGames(r, e, u, siteOwner);
+  if (p[0] === "campaigns" && p[2] === "applications")
+    return gameApplications(r, e, u, p[1], p[3], siteOwner);
+  if (p[0] === "campaigns" && p[2] === "join-public" && method === "POST")
+    fail(409, "Отправьте мастеру заявку на вступление");
   if (p[0] === "campaigns")
     return ["chat", "documents", "log", "rules-config"].includes(p[2])
       ? gameTools(r, e, u, p, () => body(r))
-      : campaignRoutes(r, e, u, p, () => body(r));
+      : campaignRoutes(r, e, u, p, () => body(r), siteOwner);
   if (p[0] === "sessions") {
     if (method === "GET") {
       const rows = await all(
@@ -605,7 +630,7 @@ export async function api(
       const b = sessionSchema.parse(await body(r));
       if (b.campaignId)
         await getCampaign(e, b.campaignId, u, "manage_sessions");
-      if (b.public && !b.campaignId) await admin(e, u);
+      if (b.public) await requireMaster(e, u.id, siteOwner);
       if (b.public && b.campaignId)
         await getCampaign(e, b.campaignId, u, "publish_campaign");
       if (!b.campaignId && !b.public)
@@ -869,17 +894,26 @@ export async function api(
     const end = z.string().datetime().parse(url.searchParams.get("end"));
     if (end <= start || Date.parse(end) - Date.parse(start) > 93 * 86400000)
       fail(400, "Период не больше 93 дней");
+    const handle = url.searchParams.get("master");
+    const selected = handle
+      ? (await publicMasters(e, siteOwner, await settings(e))).find(
+          (m) => m.profile.handle === handle,
+        )
+      : null;
+    if (handle && !selected) fail(404, "Ведущий сейчас не принимает заявки");
+    const masterId = selected?.userId || siteOwner;
     const local = await all(
       e,
       "SELECT start,end FROM reservations WHERE owner_id=? AND start<? AND end>?",
-      siteOwner,
+      masterId,
       end,
       start,
     );
-    const external = await externalBusy(e, start, end);
+    const external =
+      masterId === siteOwner ? await externalBusy(e, start, end) : [];
     return json({
       busy: [...local, ...external],
-      externalConnected: !!e.INTEGRATION_URL,
+      externalConnected: masterId === siteOwner && !!e.INTEGRATION_URL,
     });
   }
   if (p[0] === "bookings") {
@@ -898,28 +932,42 @@ export async function api(
       const b = bookingSchema.parse(await body(r));
       if (b.start && Date.parse(b.start) < Date.now())
         fail(400, "Укажите будущую дату");
-      const quote = price(b, (await settings(e)).pricing),
+      const siteSettings = await settings(e);
+      const offered = await publicMasters(e, siteOwner, siteSettings);
+      const selected = b.masterHandle
+        ? offered.find((m) => m.profile.handle === b.masterHandle)
+        : offered.find((m) => m.userId === siteOwner);
+      if (!selected) fail(404, "Ведущий сейчас не принимает заявки");
+      if (
+        b.format !== "surprise" &&
+        !selected!.profile.formats.includes(b.format) &&
+        b.masterHandle
+      )
+        fail(400, "Ведущий не проводит игры в этом формате");
+      const gm = selected!.userId;
+      const quote = price(b, selected!.profile.pricing),
         id = uid();
       await run(
         e,
         "INSERT INTO bookings(id,user_id,gm_id,data,total,created_at) VALUES(?,?,?,?,?,?)",
         id,
         u.id,
-        siteOwner,
+        gm,
         JSON.stringify(b),
         quote.total,
         now(),
       );
-      await enqueue(e, "booking.requested", {
-        id,
-        booking: b,
-        total: quote.total,
-      });
-      ctx.waitUntil(sendOutbox(e));
+      if (gm === siteOwner) {
+        await enqueue(e, "booking.requested", {
+          id,
+          booking: b,
+          total: quote.total,
+        });
+        ctx.waitUntil(sendOutbox(e));
+      }
       return json({ id, total: quote.total, status: "pending" }, 201);
     }
     if (method === "POST" && ["confirm", "decline"].includes(p[2])) {
-      await admin(e, u);
       const b = await one(
         e,
         "SELECT * FROM bookings WHERE id=? AND gm_id=?",
@@ -945,18 +993,20 @@ export async function api(
           data.start,
           new Date(Date.parse(data.start) + data.hours * 3600000).toISOString(),
           update,
+          u.id === siteOwner,
         );
       } else await update.run();
-      await enqueue(
-        e,
-        `booking.${p[2] === "confirm" ? "confirmed" : "declined"}`,
-        { id: b!.id, booking: data, total: b!.total },
-      );
-      ctx.waitUntil(sendOutbox(e));
+      if (u.id === siteOwner) {
+        await enqueue(
+          e,
+          `booking.${p[2] === "confirm" ? "confirmed" : "declined"}`,
+          { id: b!.id, booking: data, total: b!.total },
+        );
+        ctx.waitUntil(sendOutbox(e));
+      }
       return json({ ok: true });
     }
     if (method === "PATCH" && p[1]) {
-      await admin(e, u);
       const b = z.object({ start: z.string().datetime() }).parse(await body(r));
       const row = await one(
         e,

@@ -1,0 +1,18 @@
+CREATE TABLE master_access (user_id TEXT PRIMARY KEY, granted_at TEXT NOT NULL, payment_id TEXT NOT NULL UNIQUE);
+--> statement-breakpoint
+CREATE TABLE master_orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, rubles INTEGER NOT NULL, return_url TEXT NOT NULL, created_at TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', provider_id TEXT UNIQUE, checkout_url TEXT);
+--> statement-breakpoint
+CREATE UNIQUE INDEX master_pending_order ON master_orders(user_id) WHERE state='pending';
+--> statement-breakpoint
+CREATE TABLE master_profiles (user_id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, data TEXT NOT NULL, visible INTEGER NOT NULL DEFAULT 0);
+ALTER TABLE campaigns ADD COLUMN listing TEXT NOT NULL DEFAULT '{"format":"online","city":"","tags":[],"accepts":["player","observer"]}';
+--> statement-breakpoint
+CREATE TABLE game_applications (id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), user_id TEXT NOT NULL, name TEXT NOT NULL, role_id TEXT NOT NULL, message TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, UNIQUE(campaign_id,user_id));
+--> statement-breakpoint
+CREATE TABLE campaign_presets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, config TEXT NOT NULL);
+--> statement-breakpoint
+CREATE TABLE assistant_preferences (user_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1);
+--> statement-breakpoint
+CREATE TABLE assistant_connections (user_id TEXT PRIMARY KEY, provider TEXT NOT NULL, encrypted_key TEXT NOT NULL);
+--> statement-breakpoint
+CREATE TABLE assistant_oauth (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, verifier TEXT NOT NULL, expires TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');

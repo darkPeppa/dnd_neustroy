@@ -4,7 +4,14 @@ import { request, upload, downloadClue, clueImageUrl, saveFile } from "../api";
 import { Field, Empty, Modal } from "../ui";
 import { GameTools } from "./GameTools";
 import { CampaignUtilities } from "./CampaignUtilities";
-import { AssistantPanel, assistantRequest } from "./Helpers";
+import { assistantRequest } from "./Helpers";
+import {
+  GameDirectory,
+  IncomingApplications,
+  ListingFields,
+  parseObject,
+} from "./GameDirectory";
+import { offlineMode } from "../api";
 type Row = Record<string, any>;
 const permissionNames: Record<string, string> = {
   view_materials: "Чтение материалов",
@@ -27,8 +34,7 @@ export function GameWorkspace({
     [tab, setTab] = useState(section),
     [busy, setBusy] = useState(false),
     [name, setName] = useState(""),
-    [invite, setInvite] = useState(""),
-    [discover, setDiscover] = useState<Row[]>([]);
+    [invite, setInvite] = useState("");
   const game = games.find((g) => g.id === cid),
     can = (p: string) =>
       game?.owner_id === ctx.me.user.id || game?.permissions?.includes(p);
@@ -55,7 +61,8 @@ export function GameWorkspace({
   }, [section]);
   useEffect(() => {
     localStorage.setItem("neustroy-campaign", cid);
-  }, [cid]);
+    ctx.setCampaign(cid, parseObject(game?.rules_config));
+  }, [cid, game?.rules_config]);
   return (
     <>
       <div className="page-heading">
@@ -150,39 +157,14 @@ export function GameWorkspace({
               </button>
             </section>
           </div>
-          <div className="card">
-            <button
-              className="ghost"
-              disabled={busy}
-              onClick={() =>
-                perform(async () =>
-                  setDiscover(await request("campaigns/discover")),
-                )
-              }
-            >
-              Найти открытые игры
-            </button>
-            {discover.map((g) => (
-              <div className="line-item" key={g.id}>
-                <div>
-                  <h3>{g.name}</h3>
-                  <p>{g.description}</p>
-                </div>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    perform(async () => {
-                      await request(`campaigns/${g.id}/join-public`, "POST");
-                      await load();
-                      setCid(g.id);
-                    })
-                  }
-                >
-                  Присоединиться
-                </button>
-              </div>
-            ))}
-          </div>
+          <GameDirectory
+            ctx={ctx}
+            refresh={load}
+            open={(id) => {
+              setCid(id);
+              setTab("materials");
+            }}
+          />
           {games.map((g) => (
             <section className="card" key={g.id}>
               <h2>{g.name}</h2>
@@ -548,7 +530,7 @@ function Materials({
               onChange={(e) => setFile(e.target.files?.[0])}
             />
           </Field>
-          {edit.kind === "map" && (
+          {ctx.agentEnabled && edit.kind === "map" && (
             <button
               className="ghost"
               disabled={busy || !edit.body.trim()}
@@ -737,7 +719,10 @@ function Access({
   ctx: AppContext;
   refresh: () => Promise<void>;
 }) {
-  const [form, setForm] = useState({ ...game }),
+  const [form, setForm] = useState({
+      ...game,
+      listing: parseObject(game.listing),
+    } as Row),
     [roles, setRoles] = useState<Row[]>([]),
     [members, setMembers] = useState<Row[]>([]),
     [edit, setEdit] = useState<Row>(),
@@ -783,6 +768,7 @@ function Access({
           <input
             type="checkbox"
             checked={form.visibility === "public"}
+            disabled={!ctx.me.isMaster && form.visibility !== "public"}
             onChange={(e) =>
               setForm({
                 ...form,
@@ -790,12 +776,33 @@ function Access({
               })
             }
           />
-          Показывать другим пользователям сервиса
+          Показывать в каталоге открытых игр
         </label>
+        {form.visibility === "public" && (
+          <ListingFields
+            listing={form.listing}
+            onChange={(listing) => setForm({ ...form, listing })}
+          />
+        )}
+        {!ctx.me.isMaster && (
+          <p className="muted">
+            Для публикации активируйте доступ ведущего в настройках.
+          </p>
+        )}
         <button
           disabled={busy || !can("publish_campaign")}
           onClick={() =>
-            perform(() => request(`campaigns/${game.id}`, "PATCH", form))
+            perform(() =>
+              request(`campaigns/${game.id}`, "PATCH", {
+                ...form,
+                listing: {
+                  ...form.listing,
+                  tags: (form.listing.tags || [])
+                    .map((t: string) => t.trim())
+                    .filter(Boolean),
+                },
+              }),
+            )
           }
         >
           Сохранить
@@ -812,6 +819,9 @@ function Access({
           </button>
         )}
       </section>
+      {!offlineMode() && can("manage_members") && (
+        <IncomingApplications cid={game.id} ctx={ctx} onChange={load} />
+      )}
       <section className="card">
         <h2>Роли участников</h2>
         {members.map((m) => (
@@ -967,30 +977,32 @@ function Journal({
     <>
       <div className="row wrap">
         <button onClick={() => begin()}>Быстрая запись</button>
-        <button
-          className="ghost"
-          disabled={busy}
-          onClick={() =>
-            perform(async () => {
-              const r = await assistantRequest({
-                action: "summary",
-                campaignId: cid,
-                prompt:
-                  "Составь сводку доступного мне журнала игры: события, решения, квесты и открытые вопросы.",
-              });
-              setEdit({
-                title: "Сводка игры",
-                body: r.text,
-                visibility: "private",
-                links: [],
-                folderId: null,
-                sessionId: null,
-              });
-            })
-          }
-        >
-          Сводка с помощником
-        </button>
+        {ctx.agentEnabled && (
+          <button
+            className="ghost"
+            disabled={busy}
+            onClick={() =>
+              perform(async () => {
+                const r = await assistantRequest({
+                  action: "summary",
+                  campaignId: cid,
+                  prompt:
+                    "Составь сводку доступного мне журнала игры: события, решения, квесты и открытые вопросы.",
+                });
+                setEdit({
+                  title: "Сводка игры",
+                  body: r.text,
+                  visibility: "private",
+                  links: [],
+                  folderId: null,
+                  sessionId: null,
+                });
+              })
+            }
+          >
+            Сводка с помощником
+          </button>
+        )}
         <button
           className="ghost"
           onClick={() =>

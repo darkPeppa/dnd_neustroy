@@ -6,6 +6,8 @@ COPY . .
 RUN npm run build
 
 FROM node:24-alpine
+ARG NEUSTROY_VERSION
+LABEL org.opencontainers.image.version=$NEUSTROY_VERSION
 WORKDIR /app
 ENV NODE_ENV=production NEUSTROY_DATA_DIR=/data NEUSTROY_PORT=8787 NEUSTROY_ACCOUNT_AUTH=true
 COPY --from=build /app/dist/client ./dist/client

@@ -636,6 +636,10 @@ export const defaultCharacter = (classId: ClassId = "wizard"): Character => {
 };
 export const bookingSchema = z
   .object({
+    masterHandle: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{2,29}$/)
+      .optional(),
     format: z.enum(["online", "offline", "surprise"]),
     players: z.number().int().min(1).max(6),
     age: z.enum(["adults", "children", "surprise"]),

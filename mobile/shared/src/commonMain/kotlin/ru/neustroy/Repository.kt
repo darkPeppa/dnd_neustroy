@@ -215,9 +215,28 @@ class LocalRepository(private val store: Storage) : Repository {
                         "user" to
                             obj("id" to user, "name" to (store.read("player-name") ?: "Мастер")),
                         "isAdmin" to true,
+                        "assistantEnabled" to state["agents"].asObject().enabled("enabled"),
                         "local" to true,
                         "integrations" to obj(),
                     )
+                "agent-preferences" ->
+                    if (method == "PUT") {
+                        save("agents", b)
+                        b
+                    } else state["agents"] ?: obj("enabled" to true)
+                "campaign-presets" ->
+                    when (method) {
+                        "GET" -> JsonArray(defaultPresets() + rows("campaign-presets"))
+                        "POST" -> {
+                            require(rows(root).size < 30) { "Можно сохранить до 30 шаблонов" }
+                            add(root, b.changed("id" to newId(), "owned" to true))
+                        }
+                        "DELETE" -> {
+                            save(root, rows(root).filter { it.text("id") != id })
+                            ok
+                        }
+                        else -> error("Операция недоступна")
+                    }
                 "settings" ->
                     if (method == "PUT") {
                         save("settings", b)
@@ -482,7 +501,8 @@ class LocalRepository(private val store: Storage) : Repository {
                                 it.changed(
                                     "name" to b["name"],
                                     "description" to b["description"],
-                                    "visibility" to b["visibility"],
+                                    "visibility" to "private",
+                                    "listing" to b["listing"],
                                 )
                             }
                         else -> error("Для управления участниками нужен сервер общей игры")

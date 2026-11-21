@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import releaseVersion from "../VERSION?raw";
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
@@ -26,6 +27,13 @@ import { Characters } from "./screens/Characters";
 import { Calendar } from "./screens/Calendar";
 import { GameWorkspace } from "./screens/GameWorkspace";
 import { AssistantPanel } from "./screens/Helpers";
+import { AgentCallback } from "./screens/AgentSettings";
+import {
+  MasterFinder,
+  MasterOffice,
+  pickMaster,
+} from "./screens/MasterDirectory";
+import { campaignAppearance, parseObject } from "./screens/GameDirectory";
 import { Builder } from "./screens/Builder";
 import { Admin } from "./screens/Admin";
 import { defaultPricing, ics, roll } from "./domain";
@@ -44,6 +52,7 @@ type Page =
   | "assistant"
   | "builder"
   | "shop"
+  | "master"
   | "settings"
   | "about"
   | "intro"
@@ -61,7 +70,7 @@ const nav = [
   { id: "tools", name: "Инструменты", icon: Dices },
   { id: "assistant", name: "Помощники", icon: Sparkles },
   { id: "builder", name: "Заявка мастеру", icon: Sparkles },
-  { id: "shop", name: "Магазин и услуги", icon: Store },
+  { id: "shop", name: "Ведущие и услуги", icon: Store },
 ];
 export type AppContext = {
   me: any;
@@ -69,6 +78,9 @@ export type AppContext = {
   toast: (s: string, error?: boolean) => void;
   go: (p: Page) => void;
   refresh: () => void;
+  agentEnabled: boolean;
+  campaignId: string;
+  setCampaign: (id: string, config: Record<string, any>) => void;
 };
 function App() {
   const simple = localStorage.getItem("neustroy-family") === "true";
@@ -76,6 +88,10 @@ function App() {
       (location.hash.slice(1) || "home") as Page,
     ),
     [me, setMe] = useState<any>(),
+    [active, setActive] = useState({
+      id: "",
+      config: {} as Record<string, any>,
+    }),
     [settings, setSettings] = useState<any>(),
     [error, setError] = useState(""),
     [message, setMessage] = useState<{ text: string; error?: boolean }>(),
@@ -91,6 +107,18 @@ function App() {
       sessionStorage.setItem("neustroy-user", m.user.id);
       setMe(m);
       setSettings(s);
+      const selected = localStorage.getItem("neustroy-campaign");
+      if (selected)
+        request<any[]>("campaigns")
+          .then((games) => {
+            const g = games.find((x) => x.id === selected);
+            if (localStorage.getItem("neustroy-campaign") === selected)
+              setActive({
+                id: g?.id || "",
+                config: parseObject(g?.rules_config),
+              });
+          })
+          .catch(() => {});
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -114,7 +142,18 @@ function App() {
     setMenu(false);
     window.scrollTo(0, 0);
   };
-  const ctx: AppContext = { me, settings, toast, go, refresh: load };
+  const agentEnabled =
+    me?.assistantEnabled !== false && active.config.assistant !== false;
+  const ctx: AppContext = {
+    me,
+    settings,
+    toast,
+    go,
+    refresh: load,
+    agentEnabled,
+    campaignId: active.id,
+    setCampaign: (id, config) => setActive({ id, config }),
+  };
   if (error && offlineMode())
     return (
       <div className="auth-page">
@@ -147,6 +186,7 @@ function App() {
         <div className="workspace-label">ВАШЕ ПРОСТРАНСТВО</div>
         <nav>
           {nav
+            .filter((n) => n.id !== "assistant" || agentEnabled)
             .filter(
               (n) =>
                 !simple ||
@@ -221,7 +261,7 @@ function App() {
             </button>
           </div>
         </header>
-        <main>
+        <main style={campaignAppearance(active.config)}>
           {page === "home" && <Home ctx={ctx} />}
           {page === "characters" && <Characters ctx={ctx} />}
           {page === "rules" && <Rules ctx={ctx} />}
@@ -230,75 +270,19 @@ function App() {
           {page === "journal" && <GameWorkspace ctx={ctx} section="journal" />}
           {page === "chat" && <GameWorkspace ctx={ctx} section="chat" />}
           {page === "tools" && <GameWorkspace ctx={ctx} section="tools" />}
-          {page === "assistant" && <AssistantPanel ctx={ctx} />}
+          <AgentCallback ctx={ctx} />
+          {page === "assistant" &&
+            (agentEnabled ? (
+              <AssistantPanel ctx={ctx} />
+            ) : (
+              <p>Помощник выключен в профиле или настройках текущей игры.</p>
+            ))}
           {page === "builder" && <Builder ctx={ctx} />}
           {page === "settings" && <Admin ctx={ctx} />}
           {page === "shop" && (
-            <>
-              <div className="page-heading">
-                <span className="eyebrow">ЧУТЬ БОЛЬШЕ ВОЛШЕБСТВА</span>
-                <h1>Магазин и услуги</h1>
-                <p>Добавьте вашей истории что-то особенное.</p>
-              </div>
-              <div className="three-col">
-                {[
-                  {
-                    name: "Хроника приключения",
-                    text: "Иллюстрированная текстовая история вашей партии.",
-                    cost: settings.pricing.chronicle,
-                  },
-                  {
-                    name: "Запись игры",
-                    text: "Вернуться к любимым моментам вашей сессии.",
-                    cost: settings.pricing.video,
-                  },
-                  {
-                    name: "Индивидуальная миниатюра",
-                    text: "Ваш персонаж в маленьком материальном мире.",
-                    cost: settings.pricing.miniatures,
-                  },
-                ].map((x) => (
-                  <article className="card service" key={x.name}>
-                    <Sparkles />
-                    <h2>{x.name}</h2>
-                    <p>{x.text}</p>
-                    <strong>{money(x.cost)}</strong>
-                    <button onClick={() => go("builder")}>
-                      Добавить к приключению
-                    </button>
-                  </article>
-                ))}
-              </div>
-              <section className="card">
-                <h2>Прайс-лист</h2>
-                {Object.entries(settings.pricing).map(([k, v]) => (
-                  <div className="line-item" key={k}>
-                    <span>
-                      {
-                        {
-                          hour: "Час игры для группы до 4 игроков",
-                          extraPlayer: "Каждый игрок сверх 4",
-                          offline: "Выезд мастера",
-                          customCharacter: "Подготовка одного персонажа",
-                          chronicle: "Хроника",
-                          video: "Видеозапись",
-                          miniatures: "Одна миниатюра",
-                        }[k]
-                      }
-                    </span>
-                    <strong>{money(v as number)}</strong>
-                  </div>
-                ))}
-                <p className="muted">
-                  Тестовые цены. Мастер может изменить их в настройках.
-                </p>
-              </section>
-              <Empty
-                title="Вещи, которые хочется забрать с собой"
-                text="Сумочки для кубиков и другие физические товары появятся здесь после добавления каталога."
-              />
-            </>
+            <MasterFinder ctx={ctx} onPick={(p) => pickMaster(ctx, p)} />
           )}
+          {page === "master" && <MasterOffice ctx={ctx} />}
           {["about", "intro", "contact", "offer", "agreement"].includes(
             page,
           ) && (
@@ -338,7 +322,7 @@ function App() {
           )}
         </main>
         <footer>
-          <span>✧ neustroy · Место для вашей истории</span>
+          <span>neustroy · {releaseVersion.trim()}</span>
           <div>
             {[
               { id: "about", n: "О мастере" },

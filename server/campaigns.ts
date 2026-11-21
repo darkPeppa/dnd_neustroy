@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Env } from "./index";
+import { gameListing, requireMaster } from "./masters";
 type User = { id: string; name: string };
 export const permissionIds = [
   "view_materials",
@@ -169,6 +170,7 @@ export async function campaignRoutes(
   u: User,
   p: string[],
   body: () => Promise<unknown>,
+  siteOwner: string,
 ): Promise<Response> {
   const method = r.method,
     id = p[1],
@@ -205,13 +207,6 @@ export async function campaignRoutes(
     ]);
     return json({ id: cid }, 201);
   }
-  if (id === "discover" && method === "GET")
-    return json(
-      await all(
-        e,
-        "SELECT id,name,description FROM campaigns WHERE visibility='public' ORDER BY name LIMIT 100",
-      ),
-    );
   if (id === "join" && method === "POST") {
     const b = z.object({ invite: title }).parse(await body()),
       c = await one(e, "SELECT id FROM campaigns WHERE invite=?", b.invite);
@@ -225,22 +220,6 @@ export async function campaignRoutes(
     );
     return json({ id: c!.id });
   }
-  if (action === "join-public" && method === "POST") {
-    const c = await one(
-      e,
-      "SELECT id FROM campaigns WHERE id=? AND visibility='public'",
-      id,
-    );
-    if (!c) deny(404, "Игра не открыта");
-    await run(
-      e,
-      "INSERT OR IGNORE INTO members(campaign_id,user_id,name,role_id) VALUES(?,?,?,'observer')",
-      id,
-      u.id,
-      u.name,
-    );
-    return json({ id });
-  }
   const c = await getCampaign(e, id, u);
   if (!action && method === "PATCH") {
     await getCampaign(e, id, u, "publish_campaign");
@@ -249,14 +228,18 @@ export async function campaignRoutes(
         name: title,
         description: z.string().max(5000),
         visibility: z.enum(["private", "public"]),
+        listing: gameListing.optional(),
       })
       .parse(await body());
+    if (b.visibility === "public")
+      await requireMaster(e, c.owner_id, siteOwner);
     await run(
       e,
-      "UPDATE campaigns SET name=?,description=?,visibility=? WHERE id=?",
+      "UPDATE campaigns SET name=?,description=?,visibility=?,listing=? WHERE id=?",
       b.name,
       b.description,
       b.visibility,
+      b.listing ? JSON.stringify(b.listing) : c.listing,
       id,
     );
     return json({ ok: true });
