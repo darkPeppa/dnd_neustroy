@@ -70,6 +70,23 @@ export function Builder({ ctx }: { ctx: AppContext }) {
   const prices = master?.pricing || ctx.settings.pricing;
   const patch = (p: any) => setForm((f: any) => ({ ...f, ...p }));
   useEffect(() => {
+    if (!master) return;
+    setForm((f: any) =>
+      f.format === "surprise" || master.formats.includes(f.format)
+        ? f
+        : {
+            ...f,
+            format:
+              master.formats.length === 1 ? master.formats[0] : "surprise",
+          },
+    );
+  }, [master]);
+  const bookingFormats: [string, string][] = [
+    ["online", "Онлайн"],
+    ["offline", "За одним столом"],
+    ["surprise", "Помогите выбрать"],
+  ];
+  useEffect(() => {
     localStorage.setItem("questbook-booking", JSON.stringify(form));
   }, [form]);
   async function loadAvailability() {
@@ -282,11 +299,15 @@ export function Builder({ ctx }: { ctx: AppContext }) {
             {step === 0 && (
               <>
                 <Field label="Формат игры">
-                  {choices("format", [
-                    ["online", "Онлайн"],
-                    ["offline", "За одним столом"],
-                    ["surprise", "Помогите выбрать"],
-                  ])}
+                  {choices(
+                    "format",
+                    bookingFormats.filter(
+                      ([id]) =>
+                        id === "surprise" ||
+                        !master ||
+                        master.formats.includes(id),
+                    ),
+                  )}
                 </Field>
                 <div className="two-col">
                   <Field label={`Игроков: ${form.players}`}>
@@ -764,8 +785,8 @@ export function Builder({ ctx }: { ctx: AppContext }) {
               <strong>{money(quote.total)}</strong>
             </div>
             <small>
-              Тестовый прайс. Итог мастер подтвердит при согласовании игры.
-              Оплаты на этом этапе нет.
+              Сумма рассчитана по прайсу ведущего. Итог мастер подтвердит при
+              согласовании игры. Оплаты на этом этапе нет.
             </small>
             <div className="quote-save">
               <Check size={15} />

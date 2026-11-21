@@ -59,6 +59,12 @@ fun BuilderScreen(s: AppState) {
         data = data.changed(key to value)
         s.store.write("booking-draft", data.toString())
     }
+    val offered = s.selectedMaster?.strings("formats") ?: listOf("online", "offline")
+    LaunchedEffect(offered) {
+        val current = data.text("format")
+        if (current != "surprise" && current !in offered)
+            set("format", offered.singleOrNull() ?: "surprise")
+    }
     PageColumn {
         Message(s)
         if (!s.repo.offline)
@@ -92,10 +98,11 @@ fun BuilderScreen(s: AppState) {
                     "Формат",
                     data.text("format"),
                     mapOf(
-                        "online" to "Онлайн",
-                        "offline" to "За одним столом",
-                        "surprise" to "Просто сделай красиво",
-                    ),
+                            "online" to "Онлайн",
+                            "offline" to "За одним столом",
+                            "surprise" to "Просто сделай красиво",
+                        )
+                        .filterKeys { it == "surprise" || it in offered },
                 ) {
                     set("format", it)
                 }
