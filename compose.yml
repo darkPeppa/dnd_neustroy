@@ -1,0 +1,26 @@
+services:
+  api:
+    image: neustroy-api:local
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - neustroy-data:/data
+    restart: unless-stopped
+    environment:
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      ASSISTANT_BASE_URL: ${ASSISTANT_BASE_URL:-}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-qwen3:4b}
+  ollama:
+    image: ollama/ollama:0.11.10
+    profiles: [models]
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+volumes:
+  neustroy-data:
+  ollama-data:

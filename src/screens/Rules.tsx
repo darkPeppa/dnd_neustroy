@@ -1,15 +1,534 @@
-import {useEffect,useState} from 'react';
-import {BookOpen,Search,Upload,Plus,Download,X,FileText,Check} from 'lucide-react';
-import type {AppContext} from '../main';
-import {editions,type Edition,classes} from '../rules';
-import {rulePackSchema,localId} from '../domain';
-import {request,saveFile} from '../api';
-import {Field,Busy,Modal,Empty} from '../ui';
-export type CatalogEntry={id:string;edition:string;kind:string;name:string;level?:number;classes?:string[];text:string;data:any};
-let catalogPromise:Promise<CatalogEntry[]>|undefined;
-export const loadCatalog=()=>catalogPromise||=(fetch('/rules/catalog.json').then(r=>{if(!r.ok)throw Error('Библиотека не загружена. Подключитесь к сети один раз.');return r.json() as Promise<{entries:CatalogEntry[]}>;}).then(x=>x.entries));
-const kinds:Record<string,string>={classes:'Классы и подклассы',species:'Виды и происхождение',backgrounds:'Предыстории',feats:'Черты',spells:'Заклинания',weapons:'Оружие',armor:'Доспехи',items:'Снаряжение',magicitems:'Магические предметы',creatures:'Существа',fulltext:'Полный текст SRD'};
-export function Rules({ctx}:{ctx:AppContext}){const [edition,setEdition]=useState<Edition>('srd-2024'),[kind,setKind]=useState('classes'),[q,setQ]=useState(''),[entries,setEntries]=useState<CatalogEntry[]>(),[selected,setSelected]=useState<CatalogEntry>(),[limit,setLimit]=useState(30),[pages,setPages]=useState<any[]>([]),[packs,setPacks]=useState<any[]>([]),[draft,setDraft]=useState({name:'',description:'',spellName:'',spellLevel:0,spellDice:'',spellText:'',featureName:'',featureLevel:1,featureText:''}),[error,setError]=useState('');useEffect(()=>{loadCatalog().then(setEntries).catch(e=>setError(e.message));request('rule-packs').then(setPacks).catch(e=>ctx.toast(e.message,true));},[]);useEffect(()=>{setLimit(30);setSelected(undefined);if(kind==='fulltext'&&edition!=='custom'){setPages([]);fetch(`/rules/${edition}.json`).then(r=>r.json() as Promise<{pages:any[]}>).then(v=>setPages(v.pages)).catch(()=>ctx.toast('Не удалось открыть полный текст',true));}},[edition,kind]);
-const filtered=(entries||[]).filter(e=>e.edition===edition&&e.kind===kind&&`${e.name} ${e.text}`.toLowerCase().includes(q.toLowerCase()));
-return <><div className="page-heading"><div><span className="eyebrow">ПРАВИЛА МЕНЯЮТСЯ. ИСТОРИИ ОСТАЮТСЯ.</span><h1>Библиотека правил</h1><p>Полные открытые SRD, отдельные редакции и ваши собственные пакеты.</p></div><span className="badge">3 206 записей · 767 страниц SRD</span></div><div className="edition-tabs">{Object.entries(editions).map(([id,e])=><button key={id} className={edition===id?'selected':''} onClick={()=>setEdition(id as Edition)}><BookOpen size={18}/><span>{e.name}<small>{e.source}</small></span></button>)}</div>{edition==='custom'?<><section className="card"><h2>Мастерская правил</h2><p>Добавьте домашние правила, авторские способности или пакет другой редакции. Они хранятся отдельно от SRD и подключаются к выбранному персонажу.</p><label className="button ghost"><Upload size={17}/>Импорт пакета JSON<input type="file" accept="application/json" hidden onChange={async e=>{const f=e.target.files?.[0];if(!f)return;try{const value=rulePackSchema.parse(JSON.parse(await f.text()));const result=await request('rule-packs','POST',value);setPacks(p=>[...p,result]);ctx.toast('Пакет правил добавлен');}catch(e){ctx.toast((e as Error).message,true);}}}/></label><button className="text-button" onClick={()=>saveFile(new Blob([JSON.stringify({name:'Моя редакция',edition:'custom',description:'Собственные правила',spells:[{id:'custom-spark',name:'Искра',level:0,kind:'attack',dice:'1d6',text:'Описание эффекта'}],features:[{id:'custom-instinct',name:'Интуиция',level:1,text:'Описание умения'}]},null,2)],{type:'application/json'}),'neustroy-rules-template.json')}>Скачать пример пакета</button></section><form className="card" onSubmit={async e=>{e.preventDefault();try{const pack=rulePackSchema.parse({name:draft.name,edition:'custom',description:draft.description,spells:draft.spellName?[{id:'custom-'+localId(),name:draft.spellName,level:draft.spellLevel,kind:'utility',dice:draft.spellDice||undefined,text:draft.spellText}]:[],features:draft.featureName?[{id:'custom-'+localId(),name:draft.featureName,level:draft.featureLevel,text:draft.featureText}]:[]});const result=await request('rule-packs','POST',pack);setPacks(p=>[...p,result]);ctx.toast('Пакет сохранён');}catch(e){ctx.toast((e as Error).message,true);}}}><h2>Создать пакет во фронтенде</h2><div className="two-col"><Field label="Название пакета"><input required value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></Field><Field label="Описание / версия правил"><input value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></Field></div><div className="two-col"><div><h3>Авторская способность</h3><Field label="Название способности"><input value={draft.featureName} onChange={e=>setDraft({...draft,featureName:e.target.value})}/></Field><Field label="С какого уровня"><input type="number" min="1" max="20" value={draft.featureLevel} onChange={e=>setDraft({...draft,featureLevel:+e.target.value})}/></Field><Field label="Описание способности"><textarea value={draft.featureText} onChange={e=>setDraft({...draft,featureText:e.target.value})}/></Field></div><div><h3>Авторское заклинание</h3><Field label="Название заклинания"><input value={draft.spellName} onChange={e=>setDraft({...draft,spellName:e.target.value})}/></Field><div className="two-col"><Field label="Круг · 0 для заговора"><input type="number" min="0" max="9" value={draft.spellLevel} onChange={e=>setDraft({...draft,spellLevel:+e.target.value})}/></Field><Field label="Бросок, если нужен"><input placeholder="1d6+2" value={draft.spellDice} onChange={e=>setDraft({...draft,spellDice:e.target.value})}/></Field></div><Field label="Описание эффекта"><textarea value={draft.spellText} onChange={e=>setDraft({...draft,spellText:e.target.value})}/></Field></div></div><button>Сохранить пакет</button></form><div className="two-col">{packs.map(p=><article className="card" key={p.id}><span className="badge">{p.edition}</span><h2>{p.name}</h2><p>{p.description}</p><p>{p.spells.length} заклинаний · {p.features.length} способностей</p><button className="ghost" onClick={()=>saveFile(new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),p.name+'.json')}><Download size={16}/>Экспорт пакета</button></article>)}</div></>:<><div className="rules-layout"><aside className="rules-nav">{Object.entries(kinds).map(([id,title])=><button className={kind===id?'selected':''} key={id} onClick={()=>setKind(id)}>{title}{kind!==id&&id!=='fulltext'&&<small>{(entries||[]).filter(e=>e.edition===edition&&e.kind===id).length}</small>}</button>)}</aside><section><div className="rules-search"><Search size={18}/><input aria-label="Поиск в правилах" placeholder="Поиск по названию или тексту · оригинал на английском" value={q} onChange={e=>{setQ(e.target.value);setLimit(30);}}/></div>{error&&<p className="error-text">{error}</p>}{kind==='fulltext'?<><p className="muted">Официальный текст {editions[edition].source}, полностью, без сокращения. Таблицы и исходную вёрстку можно проверить в <a href={editions[edition].pdf} target="_blank" rel="noreferrer">официальном PDF</a>.</p>{!pages.length?<Busy/>:pages.filter(p=>!q||p.text.toLowerCase().includes(q.toLowerCase())).slice(0,limit).map(p=><details className="card srd-page" key={p.page}><summary>Страница {p.page} · {p.text.trim().split('\n').slice(0,2).join(' ').slice(0,90)}</summary><pre>{p.text}</pre><a href={editions[edition].pdf+'#page='+p.page} target="_blank" rel="noreferrer">Открыть страницу в PDF</a></details>)}</>:!entries?<Busy/>:<><p className="muted">{filtered.length} записей · источник: {editions[edition].source} / Open5e · оригинал EN</p><div className="rules-results">{filtered.slice(0,limit).map(e=><button className="rule-result" key={e.id} onClick={()=>setSelected(e)}><span className="rule-symbol">{kind==='spells'?'✦':'△'}</span><span><strong>{e.name}</strong><small>{kind==='spells'?`${e.level===0?'Заговор':`${e.level} круг`} · ${e.classes?.map(c=>classes[c]?.name||c).join(', ')}`:editions[edition].source}</small></span><Plus size={16}/></button>)}</div>{!filtered.length&&<Empty title="Ничего не нашлось" text="Попробуйте английское название или откройте полный текст SRD."/>}</>}{(kind==='fulltext'?pages.filter(p=>!q||p.text.toLowerCase().includes(q.toLowerCase())).length:filtered.length)>limit&&<button className="ghost" onClick={()=>setLimit(limit+30)}>Показать ещё</button>}</section></div><p className="muted">SRD — открытая часть базовых правил. Материалы закрытых книг не входят в библиотеку. Другие редакции подключаются своими пакетами и листами; автоматизация проверена для 5e 2014/2024.</p></>}{selected&&<Modal title={selected.name} onClose={()=>setSelected(undefined)}><span className="badge">{editions[edition].source} · {kinds[kind]}</span><p className="rule-description">{selected.text}</p>{selected.kind==='classes'&&selected.data.features?.map((f:any)=><details key={f.key}><summary>{f.name} · уровни {f.gained_at.map((v:any)=>v.level).join(', ')}</summary><p className="rule-description">{f.desc}</p></details>)}{selected.kind==='spells'&&<div className="summary-box"><p>Дистанция: {selected.data.range_text} · длительность: {selected.data.duration}</p><p>Концентрация: {selected.data.concentration?'да':'нет'} · ритуал: {selected.data.ritual?'да':'нет'}</p><p>{selected.data.higher_level}</p></div>}<small className="muted">Wizards of the Coast · CC BY 4.0. Структурированные данные Open5e, текст правил — оригинальные SRD.</small></Modal>}</>;
+import { useEffect, useState } from "react";
+import {
+  BookOpen,
+  Search,
+  Upload,
+  Plus,
+  Download,
+  X,
+  FileText,
+  Check,
+} from "lucide-react";
+import type { AppContext } from "../main";
+import { editions, type Edition, classes } from "../rules";
+import { rulePackSchema, localId } from "../domain";
+import { request, saveFile } from "../api";
+import { Field, Busy, Modal, Empty } from "../ui";
+export type CatalogEntry = {
+  id: string;
+  edition: string;
+  kind: string;
+  name: string;
+  level?: number;
+  classes?: string[];
+  text: string;
+  data: any;
+};
+let catalogPromise: Promise<CatalogEntry[]> | undefined;
+export const loadCatalog = () =>
+  (catalogPromise ||= fetch("/rules/catalog.json")
+    .then((r) => {
+      if (!r.ok)
+        throw Error("Библиотека не загружена. Подключитесь к сети один раз.");
+      return r.json() as Promise<{ entries: CatalogEntry[] }>;
+    })
+    .then((x) => x.entries));
+const kinds: Record<string, string> = {
+  classes: "Классы и подклассы",
+  species: "Виды и происхождение",
+  backgrounds: "Предыстории",
+  feats: "Черты",
+  spells: "Заклинания",
+  weapons: "Оружие",
+  armor: "Доспехи",
+  items: "Снаряжение",
+  magicitems: "Магические предметы",
+  creatures: "Существа",
+  fulltext: "Полный текст SRD",
+};
+export function Rules({ ctx }: { ctx: AppContext }) {
+  const [edition, setEdition] = useState<Edition>("srd-2024"),
+    [kind, setKind] = useState("classes"),
+    [q, setQ] = useState(""),
+    [entries, setEntries] = useState<CatalogEntry[]>(),
+    [selected, setSelected] = useState<CatalogEntry>(),
+    [limit, setLimit] = useState(30),
+    [pages, setPages] = useState<any[]>([]),
+    [packs, setPacks] = useState<any[]>([]),
+    [draft, setDraft] = useState({
+      name: "",
+      description: "",
+      spellName: "",
+      spellLevel: 0,
+      spellDice: "",
+      spellText: "",
+      featureName: "",
+      featureLevel: 1,
+      featureText: "",
+    }),
+    [error, setError] = useState("");
+  useEffect(() => {
+    loadCatalog()
+      .then(setEntries)
+      .catch((e) => setError(e.message));
+    request("rule-packs")
+      .then(setPacks)
+      .catch((e) => ctx.toast(e.message, true));
+  }, []);
+  useEffect(() => {
+    setLimit(30);
+    setSelected(undefined);
+    if (kind === "fulltext" && edition !== "custom") {
+      setPages([]);
+      fetch(`/rules/${edition}.json`)
+        .then((r) => r.json() as Promise<{ pages: any[] }>)
+        .then((v) => setPages(v.pages))
+        .catch(() => ctx.toast("Не удалось открыть полный текст", true));
+    }
+  }, [edition, kind]);
+  const filtered = (entries || []).filter(
+    (e) =>
+      e.edition === edition &&
+      e.kind === kind &&
+      `${e.name} ${e.text}`.toLowerCase().includes(q.toLowerCase()),
+  );
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">ПРАВИЛА МЕНЯЮТСЯ. ИСТОРИИ ОСТАЮТСЯ.</span>
+          <h1>Библиотека правил</h1>
+          <p>
+            Полные открытые SRD, отдельные редакции и ваши собственные пакеты.
+          </p>
+        </div>
+        <span className="badge">3 206 записей · 767 страниц SRD</span>
+      </div>
+      <div className="edition-tabs">
+        {Object.entries(editions).map(([id, e]) => (
+          <button
+            key={id}
+            className={edition === id ? "selected" : ""}
+            onClick={() => setEdition(id as Edition)}
+          >
+            <BookOpen size={18} />
+            <span>
+              {e.name}
+              <small>{e.source}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+      {edition === "custom" ? (
+        <>
+          <section className="card">
+            <h2>Мастерская правил</h2>
+            <p>
+              Добавьте домашние правила, авторские способности или пакет другой
+              редакции. Они хранятся отдельно от SRD и подключаются к выбранному
+              персонажу.
+            </p>
+            <label className="button ghost">
+              <Upload size={17} />
+              Импорт пакета JSON
+              <input
+                type="file"
+                accept="application/json"
+                hidden
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  try {
+                    const value = rulePackSchema.parse(
+                      JSON.parse(await f.text()),
+                    );
+                    const result = await request("rule-packs", "POST", value);
+                    setPacks((p) => [...p, result]);
+                    ctx.toast("Пакет правил добавлен");
+                  } catch (e) {
+                    ctx.toast((e as Error).message, true);
+                  }
+                }}
+              />
+            </label>
+            <button
+              className="text-button"
+              onClick={() =>
+                saveFile(
+                  new Blob(
+                    [
+                      JSON.stringify(
+                        {
+                          name: "Моя редакция",
+                          edition: "custom",
+                          description: "Собственные правила",
+                          spells: [
+                            {
+                              id: "custom-spark",
+                              name: "Искра",
+                              level: 0,
+                              kind: "attack",
+                              dice: "1d6",
+                              text: "Описание эффекта",
+                            },
+                          ],
+                          features: [
+                            {
+                              id: "custom-instinct",
+                              name: "Интуиция",
+                              level: 1,
+                              text: "Описание умения",
+                            },
+                          ],
+                        },
+                        null,
+                        2,
+                      ),
+                    ],
+                    { type: "application/json" },
+                  ),
+                  "neustroy-rules-template.json",
+                )
+              }
+            >
+              Скачать пример пакета
+            </button>
+          </section>
+          <form
+            className="card"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const pack = rulePackSchema.parse({
+                  name: draft.name,
+                  edition: "custom",
+                  description: draft.description,
+                  spells: draft.spellName
+                    ? [
+                        {
+                          id: "custom-" + localId(),
+                          name: draft.spellName,
+                          level: draft.spellLevel,
+                          kind: "utility",
+                          dice: draft.spellDice || undefined,
+                          text: draft.spellText,
+                        },
+                      ]
+                    : [],
+                  features: draft.featureName
+                    ? [
+                        {
+                          id: "custom-" + localId(),
+                          name: draft.featureName,
+                          level: draft.featureLevel,
+                          text: draft.featureText,
+                        },
+                      ]
+                    : [],
+                });
+                const result = await request("rule-packs", "POST", pack);
+                setPacks((p) => [...p, result]);
+                ctx.toast("Пакет сохранён");
+              } catch (e) {
+                ctx.toast((e as Error).message, true);
+              }
+            }}
+          >
+            <h2>Создать пакет во фронтенде</h2>
+            <div className="two-col">
+              <Field label="Название пакета">
+                <input
+                  required
+                  value={draft.name}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                />
+              </Field>
+              <Field label="Описание / версия правил">
+                <input
+                  value={draft.description}
+                  onChange={(e) =>
+                    setDraft({ ...draft, description: e.target.value })
+                  }
+                />
+              </Field>
+            </div>
+            <div className="two-col">
+              <div>
+                <h3>Авторская способность</h3>
+                <Field label="Название способности">
+                  <input
+                    value={draft.featureName}
+                    onChange={(e) =>
+                      setDraft({ ...draft, featureName: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="С какого уровня">
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={draft.featureLevel}
+                    onChange={(e) =>
+                      setDraft({ ...draft, featureLevel: +e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Описание способности">
+                  <textarea
+                    value={draft.featureText}
+                    onChange={(e) =>
+                      setDraft({ ...draft, featureText: e.target.value })
+                    }
+                  />
+                </Field>
+              </div>
+              <div>
+                <h3>Авторское заклинание</h3>
+                <Field label="Название заклинания">
+                  <input
+                    value={draft.spellName}
+                    onChange={(e) =>
+                      setDraft({ ...draft, spellName: e.target.value })
+                    }
+                  />
+                </Field>
+                <div className="two-col">
+                  <Field label="Круг · 0 для заговора">
+                    <input
+                      type="number"
+                      min="0"
+                      max="9"
+                      value={draft.spellLevel}
+                      onChange={(e) =>
+                        setDraft({ ...draft, spellLevel: +e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Бросок, если нужен">
+                    <input
+                      placeholder="1d6+2"
+                      value={draft.spellDice}
+                      onChange={(e) =>
+                        setDraft({ ...draft, spellDice: e.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+                <Field label="Описание эффекта">
+                  <textarea
+                    value={draft.spellText}
+                    onChange={(e) =>
+                      setDraft({ ...draft, spellText: e.target.value })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+            <button>Сохранить пакет</button>
+          </form>
+          <div className="two-col">
+            {packs.map((p) => (
+              <article className="card" key={p.id}>
+                <span className="badge">{p.edition}</span>
+                <h2>{p.name}</h2>
+                <p>{p.description}</p>
+                <p>
+                  {p.spells.length} заклинаний · {p.features.length}{" "}
+                  способностей
+                </p>
+                <button
+                  className="ghost"
+                  onClick={() =>
+                    saveFile(
+                      new Blob([JSON.stringify(p, null, 2)], {
+                        type: "application/json",
+                      }),
+                      p.name + ".json",
+                    )
+                  }
+                >
+                  <Download size={16} />
+                  Экспорт пакета
+                </button>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="rules-layout">
+            <aside className="rules-nav">
+              {Object.entries(kinds).map(([id, title]) => (
+                <button
+                  className={kind === id ? "selected" : ""}
+                  key={id}
+                  onClick={() => setKind(id)}
+                >
+                  {title}
+                  {kind !== id && id !== "fulltext" && (
+                    <small>
+                      {
+                        (entries || []).filter(
+                          (e) => e.edition === edition && e.kind === id,
+                        ).length
+                      }
+                    </small>
+                  )}
+                </button>
+              ))}
+            </aside>
+            <section>
+              <div className="rules-search">
+                <Search size={18} />
+                <input
+                  aria-label="Поиск в правилах"
+                  placeholder="Поиск по названию или тексту · оригинал на английском"
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setLimit(30);
+                  }}
+                />
+              </div>
+              {error && <p className="error-text">{error}</p>}
+              {kind === "fulltext" ? (
+                <>
+                  <p className="muted">
+                    Официальный текст {editions[edition].source}, полностью, без
+                    сокращения. Таблицы и исходную вёрстку можно проверить в{" "}
+                    <a
+                      href={editions[edition].pdf}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      официальном PDF
+                    </a>
+                    .
+                  </p>
+                  {!pages.length ? (
+                    <Busy />
+                  ) : (
+                    pages
+                      .filter(
+                        (p) =>
+                          !q || p.text.toLowerCase().includes(q.toLowerCase()),
+                      )
+                      .slice(0, limit)
+                      .map((p) => (
+                        <details className="card srd-page" key={p.page}>
+                          <summary>
+                            Страница {p.page} ·{" "}
+                            {p.text
+                              .trim()
+                              .split("\n")
+                              .slice(0, 2)
+                              .join(" ")
+                              .slice(0, 90)}
+                          </summary>
+                          <pre>{p.text}</pre>
+                          <a
+                            href={editions[edition].pdf + "#page=" + p.page}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Открыть страницу в PDF
+                          </a>
+                        </details>
+                      ))
+                  )}
+                </>
+              ) : !entries ? (
+                <Busy />
+              ) : (
+                <>
+                  <p className="muted">
+                    {filtered.length} записей · источник:{" "}
+                    {editions[edition].source} / Open5e · оригинал EN
+                  </p>
+                  <div className="rules-results">
+                    {filtered.slice(0, limit).map((e) => (
+                      <button
+                        className="rule-result"
+                        key={e.id}
+                        onClick={() => setSelected(e)}
+                      >
+                        <span className="rule-symbol">
+                          {kind === "spells" ? "✦" : "△"}
+                        </span>
+                        <span>
+                          <strong>{e.name}</strong>
+                          <small>
+                            {kind === "spells"
+                              ? `${e.level === 0 ? "Заговор" : `${e.level} круг`} · ${e.classes?.map((c) => classes[c]?.name || c).join(", ")}`
+                              : editions[edition].source}
+                          </small>
+                        </span>
+                        <Plus size={16} />
+                      </button>
+                    ))}
+                  </div>
+                  {!filtered.length && (
+                    <Empty
+                      title="Ничего не нашлось"
+                      text="Попробуйте английское название или откройте полный текст SRD."
+                    />
+                  )}
+                </>
+              )}
+              {(kind === "fulltext"
+                ? pages.filter(
+                    (p) => !q || p.text.toLowerCase().includes(q.toLowerCase()),
+                  ).length
+                : filtered.length) > limit && (
+                <button className="ghost" onClick={() => setLimit(limit + 30)}>
+                  Показать ещё
+                </button>
+              )}
+            </section>
+          </div>
+          <p className="muted">
+            SRD — открытая часть базовых правил. Материалы закрытых книг не
+            входят в библиотеку. Другие редакции подключаются своими пакетами и
+            листами; автоматизация проверена для 5e 2014/2024.
+          </p>
+        </>
+      )}
+      {selected && (
+        <Modal title={selected.name} onClose={() => setSelected(undefined)}>
+          <span className="badge">
+            {editions[edition].source} · {kinds[kind]}
+          </span>
+          <p className="rule-description">{selected.text}</p>
+          {selected.kind === "classes" &&
+            selected.data.features?.map((f: any) => (
+              <details key={f.key}>
+                <summary>
+                  {f.name} · уровни{" "}
+                  {f.gained_at.map((v: any) => v.level).join(", ")}
+                </summary>
+                <p className="rule-description">{f.desc}</p>
+              </details>
+            ))}
+          {selected.kind === "spells" && (
+            <div className="summary-box">
+              <p>
+                Дистанция: {selected.data.range_text} · длительность:{" "}
+                {selected.data.duration}
+              </p>
+              <p>
+                Концентрация: {selected.data.concentration ? "да" : "нет"} ·
+                ритуал: {selected.data.ritual ? "да" : "нет"}
+              </p>
+              <p>{selected.data.higher_level}</p>
+            </div>
+          )}
+          <small className="muted">
+            Wizards of the Coast · CC BY 4.0. Структурированные данные Open5e,
+            текст правил — оригинальные SRD.
+          </small>
+        </Modal>
+      )}
+    </>
+  );
 }

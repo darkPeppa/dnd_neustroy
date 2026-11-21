@@ -16,3 +16,20 @@ jobs:
       - run: npm test
       - name: Start from Node 20 and check persisted sheets
         run: npx --yes --package=node@20.16.0 node tests/local-runtime-smoke.mjs
+      - name: Check account server and restart
+        run: node tests/local-runtime-smoke.mjs --accounts
+  server-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t neustroy-api:local .
+      - name: Smoke test the packaged server
+        run: |
+          docker run -d --name neustroy-smoke -p 127.0.0.1:8787:8787 neustroy-api:local
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:8787/api/auth/status
+          docker rm -f neustroy-smoke
+      - run: docker save neustroy-api:local | gzip > neustroy-server-linux-amd64.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neustroy-server-image
+          path: neustroy-server-linux-amd64.tar.gz

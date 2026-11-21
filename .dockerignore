@@ -1,0 +1,14 @@
+.git
+.local
+.wrangler
+node_modules
+dist
+mobile
+android
+ios
+.dev.vars
+.env
+.env.*
+DNS.md
+*.keystore
+*.jks

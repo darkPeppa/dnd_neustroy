@@ -15,6 +15,34 @@
       "when": 1795125600001,
       "tag": "0002_accounts_and_rulepacks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795125600002,
+      "tag": "0003_campaign_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795125600003,
+      "tag": "0004_chat_and_game_tools",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795125600004,
+      "tag": "0005_telegram_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795125600005,
+      "tag": "0006_campaign_utilities",
+      "breakpoints": true
     }
   ]
 }

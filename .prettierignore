@@ -1,0 +1,13 @@
+node_modules
+dist
+.local
+.wrangler
+data/catalog
+data/vendored
+public/rules
+android
+ios
+mobile
+DNS.md
+package-lock.json
+server/assets.generated.ts
