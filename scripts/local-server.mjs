@@ -333,7 +333,13 @@ async function serve(req, res) {
         headers.set(key, Array.isArray(value) ? value.join(", ") : value);
       }
       headers.set("cf-connecting-ip", address);
-      if (accounts && loopback) headers.set("x-neustroy-loopback", "true");
+      if (
+        accounts &&
+        loopback &&
+        !publicOrigin &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      )
+        headers.set("x-neustroy-loopback", "true");
       if (!accounts) {
         headers.set("oai-authenticated-user-id", userId);
         headers.set(
